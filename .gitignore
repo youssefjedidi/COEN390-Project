@@ -1,0 +1,8 @@
+.DS_Store
+~$*
+*.tmp
+*.temp
+*.log
+
+# Keep private drafts out of this shareable repo
+docs/guide/
