@@ -6,3 +6,15 @@
 
 # Keep private drafts out of this shareable repo
 docs/guide/
+
+# Android / Gradle
+.idea/
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+gradle-daemon-jvm.properties
+*.apk
+*.aab
