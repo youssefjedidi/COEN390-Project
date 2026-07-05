@@ -10,3 +10,8 @@ Shared repository for the COEN/ELEC 390 team project.
 - Scrum documentation
 - Testing and design documentation
 - Final demo and presentation materials
+
+## Repository Layout
+
+- `android/` - Android Studio project for the Smart Exit mobile app
+- `firmware/` - ESP32 sketches and sensor test programs
