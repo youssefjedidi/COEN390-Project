@@ -3,8 +3,18 @@
     <color name="screen_background">#F8FAFC</color>
     <color name="card_background">#FFFFFF</color>
     <color name="card_stroke">#D7DEE8</color>
-    <color name="status_background">#E8F2FF</color>
-    <color name="status_text">#155E9F</color>
+    <color name="info_card_background">#F1F5F9</color>
+    <color name="info_card_stroke">#CBD5E1</color>
+    <color name="status_waiting_background">#E8F2FF</color>
+    <color name="status_waiting_text">#155E9F</color>
+    <color name="status_connected_background">#E7F6EE</color>
+    <color name="status_connected_text">#176B4D</color>
+    <color name="status_offline_background">#FFF2E2</color>
+    <color name="status_offline_text">#925A12</color>
     <color name="text_primary">#1F2937</color>
     <color name="text_secondary">#5F6B7A</color>
+    <color name="button_primary_background">#176B87</color>
+    <color name="button_primary_text">#FFFFFF</color>
+    <color name="button_secondary_text">#176B87</color>
+    <color name="button_warning_text">#925A12</color>
 </resources>
