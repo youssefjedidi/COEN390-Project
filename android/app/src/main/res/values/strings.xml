@@ -3,6 +3,7 @@
     <string name="app_name">Smart Exit</string>
     <string name="station_waiting">Station waiting for data</string>
     <string name="station_mock">Mock data active</string>
+    <string name="station_live">Station live</string>
     <string name="station_offline">Station offline</string>
     <string name="reading_state_waiting">Current tray reading</string>
     <string name="reading_state_item_detected">Item detected on tray</string>
@@ -15,7 +16,8 @@
     <string name="last_checked_format">Last checked: %1$s</string>
     <string name="reading_detail_waiting">Use the mock controls below to verify the UI before Bluetooth data is connected.</string>
     <string name="reading_detail_item">Mock sample: %1$s. This value is generated in the app until Bluetooth data is connected.</string>
-    <string name="reading_detail_clear">Mock reading is near zero. This is the state we expect when the tray is empty.</string>
+    <string name="reading_detail_live_item">Live station reading: %1$s.</string>
+    <string name="reading_detail_clear">The reading is near zero. This is the state we expect when the tray is empty.</string>
     <string name="reading_detail_offline">The app is keeping the last known value visible, but it should not claim the station is live.</string>
     <string name="mock_controls_title">Mock test controls</string>
     <string name="simulate_item">Next mock item reading</string>
@@ -24,6 +26,7 @@
     <string name="sprint_test_title">Sprint 1 display check</string>
     <string name="data_source_waiting">Data source: not connected yet</string>
     <string name="data_source_mock">Data source: mock Android reading</string>
+    <string name="data_source_live">Data source: live station reading</string>
     <string name="data_source_offline">Data source: last known reading</string>
     <string name="sprint_note">This screen is intentionally limited to display behavior. COM-2 can replace the mock source with Bluetooth readings without changing the layout.</string>
 </resources>
