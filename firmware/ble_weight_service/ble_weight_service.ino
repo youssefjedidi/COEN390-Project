@@ -10,12 +10,14 @@
 constexpr int HX711_DOUT_PIN = 16;
 constexpr int HX711_SCK_PIN = 4;
 
-constexpr byte SAMPLE_COUNT = 10;
+constexpr byte SAMPLE_COUNT = 5;
 constexpr float CALIBRATION_MASS_GRAMS = 100.0f;
 constexpr float CLEAR_THRESHOLD_GRAMS = 5.0f;
-constexpr float MAX_WEIGHT_GRAMS = 10000.0f;
+constexpr float STABILITY_THRESHOLD_GRAMS = 5.0f;
+constexpr float MAX_WEIGHT_GRAMS = 1000.0f;
 constexpr unsigned long NOTIFY_INTERVAL_MS = 500;
 constexpr size_t PAYLOAD_BUFFER_SIZE = 21;
+constexpr uint16_t MAX_SEQUENCE_NUMBER = 9999;
 
 constexpr char DEVICE_NAME[] = "SmartExit-Station";
 constexpr char SERVICE_UUID[] = "05442887-a14c-4c36-906c-0fe1af039f9f";
@@ -37,13 +39,14 @@ bool preferencesReady = false;
 uint16_t sequenceNumber = 0;
 
 enum class WeightStatus {
-  Clear,
-  Present,
+  Ok,
+  NoLoad,
+  Unstable,
   Error
 };
 
 struct WeightReading {
-  long grams;
+  float grams;
   WeightStatus status;
 };
 
@@ -70,7 +73,7 @@ void startBluetoothService() {
       WEIGHT_CHARACTERISTIC_UUID,
       BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
   weightCharacteristic->addDescriptor(new BLE2902());
-  weightCharacteristic->setValue("0,ERROR,0");
+  weightCharacteristic->setValue("0.0,ERROR,0");
 
   weightService->start();
 
@@ -189,30 +192,57 @@ void handleSerialCommand() {
 WeightReading readWeight() {
   if (!loadCellReady || !scaleCalibrated ||
       !scale.wait_ready_timeout(1000)) {
-    return {0, WeightStatus::Error};
+    return {0.0f, WeightStatus::Error};
   }
 
-  float filteredWeight = scale.get_units(SAMPLE_COUNT);
+  float totalWeight = 0.0f;
+  float minimumWeight = MAX_WEIGHT_GRAMS;
+  float maximumWeight = -MAX_WEIGHT_GRAMS;
+
+  // The average and stability check use the same samples, so the status
+  // describes the exact readings that produced the transmitted weight.
+  for (byte sample = 0; sample < SAMPLE_COUNT; sample++) {
+    if (!scale.wait_ready_timeout(250)) {
+      return {0.0f, WeightStatus::Error};
+    }
+
+    float weight = scale.get_units(1);
+    if (!isfinite(weight)) {
+      return {0.0f, WeightStatus::Error};
+    }
+
+    totalWeight += weight;
+    minimumWeight = min(minimumWeight, weight);
+    maximumWeight = max(maximumWeight, weight);
+  }
+
+  float filteredWeight = totalWeight / SAMPLE_COUNT;
+
+  if (filteredWeight < -CLEAR_THRESHOLD_GRAMS ||
+      filteredWeight > MAX_WEIGHT_GRAMS) {
+    return {0.0f, WeightStatus::Error};
+  }
+
+  if (maximumWeight - minimumWeight > STABILITY_THRESHOLD_GRAMS) {
+    return {max(0.0f, filteredWeight), WeightStatus::Unstable};
+  }
 
   if (filteredWeight >= -CLEAR_THRESHOLD_GRAMS &&
       filteredWeight <= CLEAR_THRESHOLD_GRAMS) {
-    return {0, WeightStatus::Clear};
+    return {0.0f, WeightStatus::NoLoad};
   }
 
-  if (filteredWeight > CLEAR_THRESHOLD_GRAMS &&
-      filteredWeight <= MAX_WEIGHT_GRAMS) {
-    return {lroundf(filteredWeight), WeightStatus::Present};
-  }
-
-  return {0, WeightStatus::Error};
+  return {filteredWeight, WeightStatus::Ok};
 }
 
 const char *statusText(WeightStatus status) {
   switch (status) {
-    case WeightStatus::Clear:
-      return "CLEAR";
-    case WeightStatus::Present:
-      return "PRESENT";
+    case WeightStatus::Ok:
+      return "OK";
+    case WeightStatus::NoLoad:
+      return "NO_LOAD";
+    case WeightStatus::Unstable:
+      return "UNSTABLE";
     case WeightStatus::Error:
       return "ERROR";
   }
@@ -227,7 +257,7 @@ void formatWeightPayload(
   snprintf(
       payload,
       payloadSize,
-      "%ld,%s,%u",
+      "%.1f,%s,%u",
       reading.grams,
       statusText(reading.status),
       sequenceNumber);
@@ -244,7 +274,9 @@ void publishWeightReading() {
 
   if (deviceConnected) {
     weightCharacteristic->notify();
-    sequenceNumber++;
+    sequenceNumber = sequenceNumber >= MAX_SEQUENCE_NUMBER
+                         ? 0
+                         : sequenceNumber + 1;
   }
 }
 
