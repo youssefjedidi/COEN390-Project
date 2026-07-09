@@ -7,7 +7,7 @@ The firmware folder contains two Arduino sketches for Sprint 1:
 
 Both sketches use GPIO 16 for HX711 `DOUT` and GPIO 4 for `SCK`, matching the team's current wiring.
 
-The ESP32 Thing Plus GPIO pins use 3.3 V logic and are not 5 V-tolerant. Power the HX711 logic from 3.3 V, or confirm that the amplifier board provides a separate 3.3 V logic supply. Do not connect a 5 V `DOUT` signal directly to GPIO 16.
+The ESP32 Dev Module GPIO pins use 3.3 V logic and are not 5 V-tolerant. Power the HX711 logic from 3.3 V, or confirm that the amplifier board provides a separate 3.3 V logic supply. Do not connect a 5 V `DOUT` signal directly to GPIO 16.
 
 ## BLE weight service
 
@@ -22,4 +22,4 @@ The characteristic supports read and notify. Its value follows the [Bluetooth pa
 
 Before the first weight test, leave the scale empty while the ESP32 starts. When the Serial Monitor asks for calibration, place a 100 g reference weight on the scale and send `c`. The ESP32 stores the calibration factor for later restarts. Send `t` at any time to tare the empty scale again.
 
-The sketches were compiled for the SparkFun ESP32 Thing Plus using ESP32 Arduino core `2.0.17` and `HX711 Arduino Library` version `0.7.5`. The BLE and Preferences libraries are included with the ESP32 Arduino package.
+The sketches were compiled using Arduino's `ESP32 Dev Module` board profile, ESP32 Arduino core `2.0.17`, and `HX711 Arduino Library` version `0.7.5`. The BLE and Preferences libraries are included with the ESP32 Arduino package.
