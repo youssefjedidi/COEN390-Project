@@ -33,6 +33,18 @@
             android:textColor="@color/status_waiting_text"
             android:textSize="14sp" />
 
+        <Button
+            android:id="@+id/bluetoothActionButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/secondary_button_background"
+            android:text="@string/allow_bluetooth_access"
+            android:textAllCaps="false"
+            android:textColor="@color/button_secondary_text"
+            android:textSize="15sp"
+            android:visibility="gone" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
