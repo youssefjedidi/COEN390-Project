@@ -6,6 +6,7 @@
     <string name="station_live">Station live</string>
     <string name="station_offline">Station offline</string>
     <string name="station_permission_required">Bluetooth access needed</string>
+    <string name="station_permission_denied">Bluetooth access denied</string>
     <string name="station_bluetooth_off">Bluetooth is off</string>
     <string name="station_ble_unsupported">Bluetooth unavailable</string>
     <string name="reading_state_waiting">Current tray reading</string>
@@ -23,10 +24,12 @@
     <string name="reading_detail_clear">The reading is near zero. This is the state we expect when the tray is empty.</string>
     <string name="reading_detail_offline">The app is keeping the last known value visible, but it should not claim the station is live.</string>
     <string name="reading_detail_permission_required">Allow Bluetooth access before connecting to the station.</string>
+    <string name="reading_detail_permission_denied">Bluetooth access was denied. Allow Nearby devices access to connect to the station.</string>
     <string name="reading_detail_bluetooth_off">Turn on Bluetooth before connecting to the station.</string>
     <string name="reading_detail_ble_unsupported">This phone does not support Bluetooth Low Energy.</string>
     <string name="reading_detail_bluetooth_ready">Bluetooth is ready. Waiting for the station.</string>
     <string name="allow_bluetooth_access">Allow Bluetooth access</string>
+    <string name="try_bluetooth_access_again">Try again</string>
     <string name="open_bluetooth_settings">Open Bluetooth settings</string>
     <string name="mock_controls_title">Mock test controls</string>
     <string name="simulate_item">Next mock item reading</string>

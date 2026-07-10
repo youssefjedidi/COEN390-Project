@@ -74,6 +74,7 @@ public class MainActivity extends Activity {
 
     private void handleBluetoothAction() {
         if (!BluetoothPermissionHelper.hasRequiredPermissions(this)) {
+            BluetoothPermissionHelper.recordPermissionRequest(this);
             requestPermissions(
                     BluetoothPermissionHelper.requiredPermissions(),
                     BLUETOOTH_PERMISSION_REQUEST
@@ -97,11 +98,19 @@ public class MainActivity extends Activity {
         }
 
         if (!BluetoothPermissionHelper.hasRequiredPermissions(this)) {
-            showBluetoothSetupState(
-                    R.string.station_permission_required,
-                    R.string.reading_detail_permission_required,
-                    R.string.allow_bluetooth_access
-            );
+            if (BluetoothPermissionHelper.wasPermissionRequested(this)) {
+                showBluetoothSetupState(
+                        R.string.station_permission_denied,
+                        R.string.reading_detail_permission_denied,
+                        R.string.try_bluetooth_access_again
+                );
+            } else {
+                showBluetoothSetupState(
+                        R.string.station_permission_required,
+                        R.string.reading_detail_permission_required,
+                        R.string.allow_bluetooth_access
+                );
+            }
             return;
         }
 

@@ -6,6 +6,9 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 
 final class BluetoothPermissionHelper {
+    private static final String PREFERENCES_NAME = "bluetooth_permission_state";
+    private static final String REQUEST_ATTEMPTED_KEY = "request_attempted";
+
     private BluetoothPermissionHelper() {
     }
 
@@ -28,6 +31,18 @@ final class BluetoothPermissionHelper {
         }
 
         return true;
+    }
+
+    static void recordPermissionRequest(Context context) {
+        context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(REQUEST_ATTEMPTED_KEY, true)
+                .apply();
+    }
+
+    static boolean wasPermissionRequested(Context context) {
+        return context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .getBoolean(REQUEST_ATTEMPTED_KEY, false);
     }
 
     static boolean supportsBle(Context context) {
