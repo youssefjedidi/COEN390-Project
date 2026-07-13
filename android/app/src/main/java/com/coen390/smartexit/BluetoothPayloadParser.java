@@ -7,8 +7,7 @@ final class BluetoothPayloadParser {
     private BluetoothPayloadParser() {
     }
 
-    // Treat every notification as untrusted text until all three fields match
-    // the contract shared by the ESP32 and Android app.
+    // Reject incomplete readings before they reach the display logic.
     static ParseResult parse(String payload) {
         if (payload == null || payload.isEmpty()) {
             return ParseResult.invalid("Payload is empty.");
