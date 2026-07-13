@@ -43,6 +43,8 @@
     <string name="reading_detail_service_missing">The station connected, but its expected weight service was not found.</string>
     <string name="reading_detail_characteristic_missing">The weight service connected, but its reading characteristic was not found.</string>
     <string name="reading_detail_notification_setup_failed">The station connected, but the app could not enable weight notifications.</string>
+    <string name="reading_detail_invalid_payload">The station sent a reading the app could not understand.</string>
+    <string name="reading_detail_sensor_error">The station reported a load-cell error. Check the sensor and calibration.</string>
     <string name="allow_bluetooth_access">Allow Bluetooth access</string>
     <string name="try_bluetooth_access_again">Try again</string>
     <string name="open_bluetooth_settings">Open Bluetooth settings</string>
