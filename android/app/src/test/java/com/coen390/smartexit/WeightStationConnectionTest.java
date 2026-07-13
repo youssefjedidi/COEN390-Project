@@ -55,6 +55,31 @@ public class WeightStationConnectionTest {
     }
 
     @Test
+    public void receivedPayloadReachesListenerAsWeightReading() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection();
+
+        transport.sendPayload("211.2,OK,1149");
+
+        assertEquals(211.2f, states.lastReading().getWeightGrams(), 0.01f);
+        assertEquals(BluetoothReading.Status.OK, states.lastReading().getStatus());
+        assertEquals(1149, states.lastReading().getSequence());
+    }
+
+    @Test
+    public void malformedPayloadIsReportedWithoutAReading() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection();
+
+        transport.sendPayload("not-a-weight");
+
+        assertEquals(1, states.invalidPayloadCount);
+        assertNull(states.lastReading());
+    }
+
+    @Test
     public void scanTimeoutReportsStationNotFound() {
         connection.connect();
         transport.failScan(WeightStationConnection.Failure.STATION_NOT_FOUND);
@@ -98,6 +123,8 @@ public class WeightStationConnectionTest {
     private static final class StateRecorder implements WeightStationConnection.Listener {
         private final List<WeightStationConnection.State> stateHistory = new ArrayList<>();
         private final List<WeightStationConnection.Failure> failureHistory = new ArrayList<>();
+        private final List<BluetoothReading> readings = new ArrayList<>();
+        private int invalidPayloadCount;
 
         @Override
         public void onStateChanged(
@@ -108,12 +135,26 @@ public class WeightStationConnectionTest {
             failureHistory.add(failure);
         }
 
+        @Override
+        public void onReadingReceived(BluetoothReading reading) {
+            readings.add(reading);
+        }
+
+        @Override
+        public void onInvalidPayload() {
+            invalidPayloadCount++;
+        }
+
         WeightStationConnection.State lastState() {
             return stateHistory.get(stateHistory.size() - 1);
         }
 
         WeightStationConnection.Failure lastFailure() {
             return failureHistory.get(failureHistory.size() - 1);
+        }
+
+        BluetoothReading lastReading() {
+            return readings.isEmpty() ? null : readings.get(readings.size() - 1);
         }
     }
 
@@ -169,6 +210,10 @@ public class WeightStationConnectionTest {
 
         void finishConnection() {
             connectionEvents.onReady();
+        }
+
+        void sendPayload(String payload) {
+            connectionEvents.onPayloadReceived(payload);
         }
 
         void failConnection(WeightStationConnection.Failure failure) {

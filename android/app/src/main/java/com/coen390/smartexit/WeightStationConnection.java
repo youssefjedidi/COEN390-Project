@@ -28,6 +28,10 @@ final class WeightStationConnection {
 
     interface Listener {
         void onStateChanged(State state, Failure failure);
+
+        void onReadingReceived(BluetoothReading reading);
+
+        void onInvalidPayload();
     }
 
     interface Transport {
@@ -53,6 +57,8 @@ final class WeightStationConnection {
 
     interface ConnectionEvents {
         void onReady();
+
+        void onPayloadReceived(String payload);
 
         void onDisconnected();
 
@@ -137,6 +143,11 @@ final class WeightStationConnection {
                     }
 
                     @Override
+                    public void onPayloadReceived(String payload) {
+                        handlePayload(payload);
+                    }
+
+                    @Override
                     public void onDisconnected() {
                         changeState(State.DISCONNECTED, null);
                     }
@@ -147,6 +158,19 @@ final class WeightStationConnection {
                     }
                 }
         );
+    }
+
+    private void handlePayload(String payload) {
+        if (state != State.CONNECTED) {
+            return;
+        }
+
+        BluetoothPayloadParser.ParseResult result = BluetoothPayloadParser.parse(payload);
+        if (result.isValid()) {
+            listener.onReadingReceived(result.getReading());
+        } else {
+            listener.onInvalidPayload();
+        }
     }
 
     private void handleFailure(Failure failure) {

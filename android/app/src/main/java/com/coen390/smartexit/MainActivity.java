@@ -178,7 +178,27 @@ public class MainActivity extends Activity {
             WeightStationConnection.Transport transport = new AndroidBleTransport(this, adapter);
             stationConnection = new WeightStationConnection(
                     transport,
-                    (state, failure) -> runOnUiThread(() -> renderConnectionState(state, failure))
+                    new WeightStationConnection.Listener() {
+                        @Override
+                        public void onStateChanged(
+                                WeightStationConnection.State state,
+                                WeightStationConnection.Failure failure
+                        ) {
+                            runOnUiThread(() -> renderConnectionState(state, failure));
+                        }
+
+                        @Override
+                        public void onReadingReceived(BluetoothReading reading) {
+                            showBluetoothReading(reading);
+                        }
+
+                        @Override
+                        public void onInvalidPayload() {
+                            runOnUiThread(() -> readingDetail.setText(
+                                    R.string.reading_detail_invalid_payload
+                            ));
+                        }
+                    }
             );
         }
         return stationConnection;
@@ -338,6 +358,20 @@ public class MainActivity extends Activity {
         renderState(WeightDisplayState.offline(currentTime()));
     }
 
+    private void showBluetoothReading(BluetoothReading reading) {
+        if (reading.getStatus() == BluetoothReading.Status.NO_LOAD) {
+            onBluetoothTrayClear();
+            return;
+        }
+
+        if (reading.getStatus() == BluetoothReading.Status.ERROR) {
+            runOnUiThread(() -> readingDetail.setText(R.string.reading_detail_sensor_error));
+            return;
+        }
+
+        onBluetoothWeightReading(Math.round(reading.getWeightGrams()), "tray load");
+    }
+
     // BLE callbacks may arrive on a background thread.
     void onBluetoothWeightReading(int weightGrams, String label) {
         runOnUiThread(() -> renderState(WeightDisplayState.liveItem(label, weightGrams, currentTime())));
@@ -345,10 +379,6 @@ public class MainActivity extends Activity {
 
     void onBluetoothTrayClear() {
         runOnUiThread(() -> renderState(WeightDisplayState.liveClear(currentTime())));
-    }
-
-    void onBluetoothDisconnected() {
-        runOnUiThread(this::showOfflineState);
     }
 
     private void renderState(WeightDisplayState state) {

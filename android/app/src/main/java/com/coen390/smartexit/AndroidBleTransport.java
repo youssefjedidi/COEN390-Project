@@ -21,6 +21,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelUuid;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.UUID;
 
@@ -171,54 +172,119 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
-            if (gatt != bluetoothGatt) {
-                return;
-            }
-
-            if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
-                discoverServices(gatt);
-                return;
-            }
-
-            if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                handleGattDisconnected(gatt);
-            } else if (status != BluetoothGatt.GATT_SUCCESS) {
-                finishConnectionWithFailure(WeightStationConnection.Failure.CONNECTION_FAILED);
-            }
+            handleConnectionStateChange(gatt, status, newState);
         }
 
         @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
-            if (gatt != bluetoothGatt) {
-                return;
-            }
-
-            if (status != BluetoothGatt.GATT_SUCCESS) {
-                finishConnectionWithFailure(WeightStationConnection.Failure.CONNECTION_FAILED);
-                return;
-            }
-
-            enableWeightNotifications(gatt);
+            handleServicesDiscovered(gatt, status);
         }
 
         @Override
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
-            if (gatt != bluetoothGatt || !CLIENT_CONFIGURATION_UUID.equals(descriptor.getUuid())) {
-                return;
-            }
+            handleDescriptorWrite(gatt, descriptor, status);
+        }
 
-            if (status != BluetoothGatt.GATT_SUCCESS) {
-                finishConnectionWithFailure(WeightStationConnection.Failure.NOTIFICATION_SETUP_FAILED);
-                return;
-            }
+        @Override
+        public void onCharacteristicChanged(
+                BluetoothGatt gatt,
+                BluetoothGattCharacteristic characteristic,
+                byte[] value
+        ) {
+            handleWeightNotification(gatt, characteristic, value);
+        }
 
-            connectionReady = true;
-            WeightStationConnection.ConnectionEvents events = connectionEvents;
-            if (events != null) {
-                events.onReady();
+        @Override
+        @SuppressWarnings("deprecation")
+        public void onCharacteristicChanged(
+                BluetoothGatt gatt,
+                BluetoothGattCharacteristic characteristic
+        ) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                handleWeightNotification(gatt, characteristic, characteristic.getValue());
             }
         }
     };
+
+    private void handleConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+        if (gatt != bluetoothGatt) {
+            return;
+        }
+
+        boolean connected = status == BluetoothGatt.GATT_SUCCESS
+                && newState == BluetoothProfile.STATE_CONNECTED;
+        if (connected) {
+            discoverServices(gatt);
+            return;
+        }
+
+        if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+            handleGattDisconnected(gatt);
+        } else if (status != BluetoothGatt.GATT_SUCCESS) {
+            finishConnectionWithFailure(WeightStationConnection.Failure.CONNECTION_FAILED);
+        }
+    }
+
+    private void handleServicesDiscovered(BluetoothGatt gatt, int status) {
+        if (gatt != bluetoothGatt) {
+            return;
+        }
+
+        if (status != BluetoothGatt.GATT_SUCCESS) {
+            finishConnectionWithFailure(WeightStationConnection.Failure.CONNECTION_FAILED);
+            return;
+        }
+
+        enableWeightNotifications(gatt);
+    }
+
+    private void handleDescriptorWrite(
+            BluetoothGatt gatt,
+            BluetoothGattDescriptor descriptor,
+            int status
+    ) {
+        if (gatt != bluetoothGatt) {
+            return;
+        }
+
+        if (!CLIENT_CONFIGURATION_UUID.equals(descriptor.getUuid())) {
+            return;
+        }
+
+        if (status != BluetoothGatt.GATT_SUCCESS) {
+            finishConnectionWithFailure(WeightStationConnection.Failure.NOTIFICATION_SETUP_FAILED);
+            return;
+        }
+
+        connectionReady = true;
+        WeightStationConnection.ConnectionEvents events = connectionEvents;
+        if (events != null) {
+            events.onReady();
+        }
+    }
+
+    private void handleWeightNotification(
+            BluetoothGatt gatt,
+            BluetoothGattCharacteristic characteristic,
+            byte[] value
+    ) {
+        if (gatt != bluetoothGatt) {
+            return;
+        }
+
+        if (!expectedCharacteristicUuid.equals(characteristic.getUuid())) {
+            return;
+        }
+
+        if (value == null) {
+            return;
+        }
+
+        WeightStationConnection.ConnectionEvents events = connectionEvents;
+        if (events != null) {
+            events.onPayloadReceived(new String(value, StandardCharsets.UTF_8));
+        }
+    }
 
     @SuppressLint("MissingPermission")
     private void discoverServices(BluetoothGatt gatt) {
