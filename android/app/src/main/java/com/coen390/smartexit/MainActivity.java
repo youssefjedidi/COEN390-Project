@@ -28,6 +28,7 @@ public class MainActivity extends Activity {
     private TextView dataSourceLabel;
     private Button bluetoothActionButton;
     private WeightDisplayState currentDisplayState;
+    private WeightStationConnection stationConnection;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -46,7 +47,6 @@ public class MainActivity extends Activity {
         Button clearTrayButton = findViewById(R.id.clearTrayButton);
         Button simulateOfflineButton = findViewById(R.id.simulateOfflineButton);
 
-        // Keep mock controls on the same display path as future station data.
         simulateItemButton.setOnClickListener(view -> showMockReading(mockWeightSource.nextItemReading()));
         clearTrayButton.setOnClickListener(view -> showMockReading(mockWeightSource.clearTrayReading()));
         simulateOfflineButton.setOnClickListener(view -> showOfflineState());
@@ -57,6 +57,14 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         updateBluetoothReadiness();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (stationConnection != null) {
+            stationConnection.close();
+        }
+        super.onDestroy();
     }
 
     @Override
@@ -82,13 +90,27 @@ public class MainActivity extends Activity {
             return;
         }
 
-        startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS));
+        BluetoothAdapter bluetoothAdapter = getBluetoothAdapter();
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
+            startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS));
+            return;
+        }
+
+        WeightStationConnection connection = getOrCreateStationConnection(bluetoothAdapter);
+        WeightStationConnection.State state = connection.getState();
+
+        if (state == WeightStationConnection.State.SCANNING
+                || state == WeightStationConnection.State.CONNECTING
+                || state == WeightStationConnection.State.CONNECTED) {
+            connection.disconnect();
+        } else {
+            connection.connect();
+        }
     }
 
-    // Check support and permission before reading the adapter. On Android 12
-    // and later, even basic adapter access is protected by Bluetooth permission.
     private void updateBluetoothReadiness() {
         if (!BluetoothPermissionHelper.supportsBle(this)) {
+            closeStationConnection();
             showBluetoothSetupState(
                     R.string.station_ble_unsupported,
                     R.string.reading_detail_ble_unsupported,
@@ -98,6 +120,7 @@ public class MainActivity extends Activity {
         }
 
         if (!BluetoothPermissionHelper.hasRequiredPermissions(this)) {
+            closeStationConnection();
             if (BluetoothPermissionHelper.wasPermissionRequested(this)) {
                 showBluetoothSetupState(
                         R.string.station_permission_denied,
@@ -114,12 +137,10 @@ public class MainActivity extends Activity {
             return;
         }
 
-        BluetoothManager bluetoothManager = getSystemService(BluetoothManager.class);
-        BluetoothAdapter bluetoothAdapter = bluetoothManager == null
-                ? null
-                : bluetoothManager.getAdapter();
+        BluetoothAdapter bluetoothAdapter = getBluetoothAdapter();
 
         if (bluetoothAdapter == null) {
+            closeStationConnection();
             showBluetoothSetupState(
                     R.string.station_ble_unsupported,
                     R.string.reading_detail_ble_unsupported,
@@ -129,6 +150,7 @@ public class MainActivity extends Activity {
         }
 
         if (!bluetoothAdapter.isEnabled()) {
+            closeStationConnection();
             showBluetoothSetupState(
                     R.string.station_bluetooth_off,
                     R.string.reading_detail_bluetooth_off,
@@ -137,9 +159,35 @@ public class MainActivity extends Activity {
             return;
         }
 
-        bluetoothActionButton.setVisibility(View.GONE);
-        if (currentDisplayState == null) {
+        WeightStationConnection connection = getOrCreateStationConnection(bluetoothAdapter);
+        WeightStationConnection.State connectionState = connection.getState();
+        if (connectionState == WeightStationConnection.State.IDLE) {
             showBluetoothReadyState();
+        } else {
+            renderConnectionState(connectionState, connection.getFailure());
+        }
+    }
+
+    private BluetoothAdapter getBluetoothAdapter() {
+        BluetoothManager bluetoothManager = getSystemService(BluetoothManager.class);
+        return bluetoothManager == null ? null : bluetoothManager.getAdapter();
+    }
+
+    private WeightStationConnection getOrCreateStationConnection(BluetoothAdapter adapter) {
+        if (stationConnection == null) {
+            WeightStationConnection.Transport transport = new AndroidBleTransport(this, adapter);
+            stationConnection = new WeightStationConnection(
+                    transport,
+                    (state, failure) -> runOnUiThread(() -> renderConnectionState(state, failure))
+            );
+        }
+        return stationConnection;
+    }
+
+    private void closeStationConnection() {
+        if (stationConnection != null) {
+            stationConnection.close();
+            stationConnection = null;
         }
     }
 
@@ -165,6 +213,13 @@ public class MainActivity extends Activity {
     }
 
     private void showBluetoothReadyState() {
+        bluetoothActionButton.setText(R.string.connect_to_station);
+        bluetoothActionButton.setVisibility(View.VISIBLE);
+
+        if (currentDisplayState != null) {
+            return;
+        }
+
         stationStatus.setText(R.string.station_waiting);
         stationStatus.setBackgroundResource(R.drawable.status_waiting_background);
         stationStatus.setTextColor(getColor(R.color.status_waiting_text));
@@ -173,6 +228,102 @@ public class MainActivity extends Activity {
         lastUpdate.setText(R.string.no_data_yet);
         readingDetail.setText(R.string.reading_detail_bluetooth_ready);
         dataSourceLabel.setText(R.string.data_source_waiting);
+    }
+
+    private void renderConnectionState(
+            WeightStationConnection.State state,
+            WeightStationConnection.Failure failure
+    ) {
+        if (state == WeightStationConnection.State.SCANNING) {
+            showConnectionState(
+                    R.string.station_scanning,
+                    R.string.reading_detail_station_scanning,
+                    R.string.cancel_connection,
+                    R.drawable.status_waiting_background,
+                    R.color.status_waiting_text
+            );
+            return;
+        }
+
+        if (state == WeightStationConnection.State.CONNECTING) {
+            showConnectionState(
+                    R.string.station_connecting,
+                    R.string.reading_detail_station_connecting,
+                    R.string.cancel_connection,
+                    R.drawable.status_waiting_background,
+                    R.color.status_waiting_text
+            );
+            return;
+        }
+
+        if (state == WeightStationConnection.State.CONNECTED) {
+            showConnectionState(
+                    R.string.station_connected,
+                    R.string.reading_detail_station_connected,
+                    R.string.disconnect_station,
+                    R.drawable.status_connected_background,
+                    R.color.status_connected_text
+            );
+            return;
+        }
+
+        if (state == WeightStationConnection.State.FAILED) {
+            showConnectionState(
+                    R.string.station_connection_failed,
+                    connectionFailureText(failure),
+                    R.string.try_connection_again,
+                    R.drawable.status_offline_background,
+                    R.color.status_offline_text
+            );
+            return;
+        }
+
+        if (state == WeightStationConnection.State.DISCONNECTED) {
+            showConnectionState(
+                    R.string.station_disconnected,
+                    R.string.reading_detail_station_disconnected,
+                    R.string.reconnect_station,
+                    R.drawable.status_offline_background,
+                    R.color.status_offline_text
+            );
+            return;
+        }
+
+        showBluetoothReadyState();
+    }
+
+    private void showConnectionState(
+            int stationText,
+            int detailText,
+            int buttonText,
+            int background,
+            int textColor
+    ) {
+        stationStatus.setText(stationText);
+        stationStatus.setBackgroundResource(background);
+        stationStatus.setTextColor(getColor(textColor));
+        readingDetail.setText(detailText);
+        bluetoothActionButton.setText(buttonText);
+        bluetoothActionButton.setVisibility(View.VISIBLE);
+    }
+
+    private int connectionFailureText(WeightStationConnection.Failure failure) {
+        if (failure == WeightStationConnection.Failure.STATION_NOT_FOUND) {
+            return R.string.reading_detail_station_not_found;
+        }
+        if (failure == WeightStationConnection.Failure.SERVICE_MISSING) {
+            return R.string.reading_detail_service_missing;
+        }
+        if (failure == WeightStationConnection.Failure.CHARACTERISTIC_MISSING) {
+            return R.string.reading_detail_characteristic_missing;
+        }
+        if (failure == WeightStationConnection.Failure.NOTIFICATION_SETUP_FAILED) {
+            return R.string.reading_detail_notification_setup_failed;
+        }
+        if (failure == WeightStationConnection.Failure.SCAN_UNAVAILABLE) {
+            return R.string.reading_detail_scan_unavailable;
+        }
+        return R.string.reading_detail_connection_failed;
     }
 
     private void showMockReading(TrayReading reading) {
@@ -187,8 +338,7 @@ public class MainActivity extends Activity {
         renderState(WeightDisplayState.offline(currentTime()));
     }
 
-    // COM-2 can call these once Bluetooth parsing is ready. The handoff returns
-    // to the UI thread before updating any TextViews.
+    // BLE callbacks may arrive on a background thread.
     void onBluetoothWeightReading(int weightGrams, String label) {
         runOnUiThread(() -> renderState(WeightDisplayState.liveItem(label, weightGrams, currentTime())));
     }
@@ -201,7 +351,6 @@ public class MainActivity extends Activity {
         runOnUiThread(this::showOfflineState);
     }
 
-    // All reading updates pass through this method before reaching the screen.
     private void renderState(WeightDisplayState state) {
         currentDisplayState = state;
         renderStationStatus(state.source);
@@ -286,7 +435,6 @@ public class MainActivity extends Activity {
         UNKNOWN
     }
 
-    // Screen state shared by mock readings and future Bluetooth readings.
     private static class WeightDisplayState {
         final DataSource source;
         final TrayStatus status;
