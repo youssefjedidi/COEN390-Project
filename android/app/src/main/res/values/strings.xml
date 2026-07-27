@@ -73,4 +73,22 @@
     <string name="item_name_required">Please enter a name for this item</string>
     <string name="item_not_found">This item no longer exists</string>
     <string name="manage_items_temp">[Temp] Add Item (for testing UI-4.2)</string>
+    <string name="settings_title">Station Settings</string>
+    <string name="hardware_section_label">Hardware</string>
+    <string name="hardware_status_ready">Bluetooth ready</string>
+    <string name="hardware_status_unsupported">Bluetooth LE not supported on this device</string>
+    <string name="hardware_status_permission_required">Bluetooth permission required</string>
+    <string name="hardware_status_off">Bluetooth is turned off</string>
+    <string name="connection_section_label">Connection</string>
+    <string name="connection_status_idle">Not connected</string>
+    <string name="connection_status_scanning">Scanning for station\u2026</string>
+    <string name="connection_status_connecting">Connecting\u2026</string>
+    <string name="connection_status_connected">Connected to station</string>
+    <string name="connection_status_disconnected">Disconnected</string>
+    <string name="connection_status_failed">Connection failed</string>
+    <string name="action_connect">Connect</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="open_settings_temp">[Temp] Open Settings (for testing UI-3.2/3.3)</string>
 </resources>
