@@ -14,7 +14,7 @@ final class DashboardStateCoordinator {
     private final ItemStateTracker itemStateTracker;
     private final RecognitionResult[] latestPlateResults;
     private final boolean[] platesUpdatedThisCycle;
-    private final boolean[] ambiguityHandled;
+    private final AmbiguityChoice[] ambiguityChoices;
     private List<RecognitionResult> completedSnapshot = new ArrayList<>();
     private int updatedPlateCount;
 
@@ -49,7 +49,7 @@ final class DashboardStateCoordinator {
         itemStateTracker = new ItemStateTracker(savedProfiles, plateCount);
         latestPlateResults = new RecognitionResult[plateCount + 1];
         platesUpdatedThisCycle = new boolean[plateCount + 1];
-        ambiguityHandled = new boolean[plateCount + 1];
+        ambiguityChoices = new AmbiguityChoice[plateCount + 1];
     }
 
     List<TrackedItemState> getStates() {
@@ -76,9 +76,7 @@ final class DashboardStateCoordinator {
         }
 
         completedSnapshot = currentSnapshot();
-        for (int index = 1; index <= plateCount; index++) {
-            ambiguityHandled[index] = false;
-        }
+        applyRememberedAmbiguityChoices();
         List<TrackedItemState> updatedStates =
                 itemStateTracker.update(completedSnapshot);
         beginNextCycle();
@@ -90,7 +88,7 @@ final class DashboardStateCoordinator {
         for (RecognitionResult result : completedSnapshot) {
             int plateNumber = result.getReading().getPlateNumber();
             if (result.getStatus() == RecognitionStatus.AMBIGUOUS
-                    && !ambiguityHandled[plateNumber]) {
+                    && ambiguityChoices[plateNumber] == null) {
                 ambiguousResults.add(result);
             }
         }
@@ -99,13 +97,7 @@ final class DashboardStateCoordinator {
 
     List<TrackedItemState> confirmAmbiguousMatch(int plateNumber, String itemId) {
         RecognitionResult ambiguousResult = requireAmbiguousResult(plateNumber);
-        ItemProfile selectedItem = null;
-        for (ItemProfile candidate : ambiguousResult.getCandidates()) {
-            if (candidate.getId().equals(itemId)) {
-                selectedItem = candidate;
-                break;
-            }
-        }
+        ItemProfile selectedItem = findCandidate(ambiguousResult, itemId);
         if (selectedItem == null) {
             throw new IllegalArgumentException(
                     "item " + itemId + " is not a candidate for plate " + plateNumber
@@ -116,12 +108,15 @@ final class DashboardStateCoordinator {
                 plateNumber,
                 RecognitionResult.matched(ambiguousResult.getReading(), selectedItem)
         );
+        ambiguityChoices[plateNumber] =
+                AmbiguityChoice.confirmed(candidateKey(ambiguousResult), itemId);
         return itemStateTracker.update(completedSnapshot);
     }
 
     List<TrackedItemState> leaveAmbiguousMatchUnresolved(int plateNumber) {
-        requireAmbiguousResult(plateNumber);
-        ambiguityHandled[plateNumber] = true;
+        RecognitionResult result = requireAmbiguousResult(plateNumber);
+        ambiguityChoices[plateNumber] =
+                AmbiguityChoice.unresolved(candidateKey(result));
         return itemStateTracker.update(completedSnapshot);
     }
 
@@ -165,10 +160,82 @@ final class DashboardStateCoordinator {
         completedSnapshot = updatedSnapshot;
     }
 
+    private void applyRememberedAmbiguityChoices() {
+        for (int index = 0; index < completedSnapshot.size(); index++) {
+            RecognitionResult result = completedSnapshot.get(index);
+            int plateNumber = result.getReading().getPlateNumber();
+            if (result.getStatus() != RecognitionStatus.AMBIGUOUS) {
+                ambiguityChoices[plateNumber] = null;
+                continue;
+            }
+
+            AmbiguityChoice choice = ambiguityChoices[plateNumber];
+            String currentKey = candidateKey(result);
+            if (choice == null) {
+                continue;
+            }
+            if (!choice.candidateKey.equals(currentKey)) {
+                ambiguityChoices[plateNumber] = null;
+                continue;
+            }
+            if (choice.selectedItemId == null) {
+                continue;
+            }
+
+            ItemProfile selectedItem = findCandidate(result, choice.selectedItemId);
+            if (selectedItem == null) {
+                ambiguityChoices[plateNumber] = null;
+                continue;
+            }
+            completedSnapshot.set(
+                    index,
+                    RecognitionResult.matched(result.getReading(), selectedItem)
+            );
+        }
+    }
+
+    private String candidateKey(RecognitionResult result) {
+        StringBuilder key = new StringBuilder();
+        for (ItemProfile candidate : result.getCandidates()) {
+            if (key.length() > 0) {
+                key.append('|');
+            }
+            key.append(candidate.getId());
+        }
+        return key.toString();
+    }
+
+    private ItemProfile findCandidate(RecognitionResult result, String itemId) {
+        for (ItemProfile candidate : result.getCandidates()) {
+            if (candidate.getId().equals(itemId)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
     private void beginNextCycle() {
         for (int plateNumber = 1; plateNumber <= plateCount; plateNumber++) {
             platesUpdatedThisCycle[plateNumber] = false;
         }
         updatedPlateCount = 0;
+    }
+
+    private static final class AmbiguityChoice {
+        private final String candidateKey;
+        private final String selectedItemId;
+
+        private AmbiguityChoice(String candidateKey, String selectedItemId) {
+            this.candidateKey = candidateKey;
+            this.selectedItemId = selectedItemId;
+        }
+
+        private static AmbiguityChoice confirmed(String candidateKey, String itemId) {
+            return new AmbiguityChoice(candidateKey, itemId);
+        }
+
+        private static AmbiguityChoice unresolved(String candidateKey) {
+            return new AmbiguityChoice(candidateKey, null);
+        }
     }
 }

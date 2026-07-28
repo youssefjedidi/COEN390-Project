@@ -584,10 +584,10 @@ public class MainActivity extends Activity {
                 .processReading(
                         new PlateReading(reading.getPlateNumber(), weightGrams)
                 )
-                .ifPresent(this::handleLiveDashboardUpdate);
+                .ifPresent(this::handleDashboardUpdate);
     }
 
-    private void handleLiveDashboardUpdate(List<TrackedItemState> states) {
+    private void handleDashboardUpdate(List<TrackedItemState> states) {
         long timestampMillis = System.currentTimeMillis();
         connectionManager.recordDashboardStates(states, timestampMillis);
         renderDashboard(states);
@@ -605,11 +605,6 @@ public class MainActivity extends Activity {
 
         RecognitionResult result = pendingResults.get(0);
         List<ItemProfile> candidates = result.getCandidates();
-        String[] candidateNames = new String[candidates.size()];
-        for (int index = 0; index < candidates.size(); index++) {
-            candidateNames[index] = candidates.get(index).getName();
-        }
-
         int plateNumber = result.getReading().getPlateNumber();
         ambiguousDialogVisible = true;
         new AlertDialog.Builder(this)
@@ -620,25 +615,49 @@ public class MainActivity extends Activity {
                                 result.getReading().getWeightGrams()
                         )
                 )
-                .setItems(candidateNames, (dialog, selectedIndex) -> {
-                    renderDashboard(
-                            dashboardStateCoordinator.confirmAmbiguousMatch(
-                                    plateNumber,
-                                    candidates.get(selectedIndex).getId()
-                            )
-                    );
-                    showNextAmbiguousMatch();
-                })
-                .setNegativeButton(R.string.ambiguous_match_not_sure, (dialog, which) -> {
-                    renderDashboard(
-                            dashboardStateCoordinator.leaveAmbiguousMatchUnresolved(
-                                    plateNumber
-                            )
-                    );
-                    showNextAmbiguousMatch();
-                })
+                .setItems(
+                        candidateNames(candidates),
+                        (dialog, selectedIndex) ->
+                                confirmAmbiguousMatch(
+                                        plateNumber,
+                                        candidates.get(selectedIndex)
+                                )
+                )
+                .setNegativeButton(
+                        R.string.ambiguous_match_not_sure,
+                        (dialog, which) -> leaveAmbiguousMatchUnresolved(plateNumber)
+                )
                 .setCancelable(false)
                 .show();
+    }
+
+    private String[] candidateNames(List<ItemProfile> candidates) {
+        String[] names = new String[candidates.size()];
+        for (int index = 0; index < candidates.size(); index++) {
+            names[index] = candidates.get(index).getName();
+        }
+        return names;
+    }
+
+    private void confirmAmbiguousMatch(int plateNumber, ItemProfile selectedItem) {
+        List<TrackedItemState> states =
+                dashboardStateCoordinator.confirmAmbiguousMatch(
+                        plateNumber,
+                        selectedItem.getId()
+                );
+        finishAmbiguousChoice(states);
+    }
+
+    private void leaveAmbiguousMatchUnresolved(int plateNumber) {
+        List<TrackedItemState> states =
+                dashboardStateCoordinator.leaveAmbiguousMatchUnresolved(plateNumber);
+        finishAmbiguousChoice(states);
+    }
+
+    private void finishAmbiguousChoice(List<TrackedItemState> states) {
+        ambiguousDialogVisible = false;
+        renderDashboard(states);
+        showNextAmbiguousMatch();
     }
 
     private void handleConnectionState(
