@@ -79,6 +79,20 @@ public class CalibrationSampleCollectorTest {
     }
 
     @Test
+    public void sensorErrorStopsTheCurrentSampleWindow() {
+        CalibrationSampleCollector collector = new CalibrationSampleCollector(4, 3, 5.0, 5.0);
+        collector.start(2);
+        collector.add(okReading(2, 80.0f));
+
+        CalibrationSampleCollector.Update update = collector.add(
+                BluetoothReading.forPlate(2, 0.0f, BluetoothReading.Status.ERROR)
+        );
+
+        assertEquals(CalibrationSampleCollector.Status.SENSOR_ERROR, update.getStatus());
+        assertEquals(0, collector.getSampleCount());
+    }
+
+    @Test
     public void ignoresReadingsUntilCalibrationStarts() {
         CalibrationSampleCollector collector = new CalibrationSampleCollector(4, 3, 5.0, 5.0);
 

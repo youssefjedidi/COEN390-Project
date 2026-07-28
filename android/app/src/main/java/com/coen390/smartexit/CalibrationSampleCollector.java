@@ -7,6 +7,7 @@ final class CalibrationSampleCollector {
         COLLECTING,
         WAITING_FOR_ITEM,
         WAITING_FOR_STABLE,
+        SENSOR_ERROR,
         COMPLETE
     }
 
@@ -126,6 +127,11 @@ final class CalibrationSampleCollector {
     Update add(BluetoothReading reading) {
         if (!active || reading == null || !belongsToSelectedPlate(reading)) {
             return Update.inProgress(Status.IGNORED, sampleCount);
+        }
+
+        if (reading.getStatus() == BluetoothReading.Status.ERROR) {
+            sampleCount = 0;
+            return Update.inProgress(Status.SENSOR_ERROR, sampleCount);
         }
 
         if (reading.getStatus() == BluetoothReading.Status.NO_LOAD

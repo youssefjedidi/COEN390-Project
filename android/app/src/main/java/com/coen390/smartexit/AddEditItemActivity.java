@@ -17,8 +17,7 @@ import java.util.List;
  * Screen for adding a new tracked item or editing an existing one (UI-4.2).
  *
  * Pass EXTRA_ITEM_ID to edit an existing item; omit it to create a new one.
- * Calibration (weight range) is shown as read-only status here; collecting
- * new calibration samples is handled separately (UI-4.3).
+ * A completed calibration remains pending until the user saves the item.
  */
 public class AddEditItemActivity extends Activity implements WeightStationConnection.Listener {
 
@@ -162,8 +161,6 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
 
     private void startCalibration() {
         int plateNumber = calibrationPlate.getSelectedItemPosition() + 1;
-        pendingMinimumWeight = null;
-        pendingMaximumWeight = null;
         calibrationCollector.start(plateNumber);
         calibrationMessage.setText(
                 getString(
@@ -191,6 +188,9 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
                 return;
             case WAITING_FOR_STABLE:
                 calibrationMessage.setText(R.string.calibration_waiting_for_stable);
+                return;
+            case SENSOR_ERROR:
+                calibrationMessage.setText(R.string.calibration_sensor_error);
                 return;
             case COLLECTING:
                 calibrationMessage.setText(
