@@ -30,3 +30,24 @@ Fields are separated by commas, with no spaces or newline character. One BLE not
 The Android app should split the value on commas in the order shown above. It should reject a payload when it does not contain exactly three fields, the weight is not a valid decimal number, the sequence is not an integer from 0 to 9999, or the status is not one of the four values above. An invalid payload should place the display in an error state instead of crashing the app.
 
 The sequence number is included because it helps the team identify missed or duplicate notifications without requiring the ESP32 and phone clocks to be synchronized. With the team's current 1 kg load cell, the longest valid payload remains within 20 bytes.
+
+## Four-plate format
+
+The Sprint 2 station sends one notification for each plate:
+
+```text
+plate_number,weight_grams,status
+```
+
+For example:
+
+```text
+1,0.0,NO_LOAD
+2,146.3,OK
+3,41.8,UNSTABLE
+4,0.0,ERROR
+```
+
+`plate_number` is an integer from 1 to 4. Weight and status use the same rules
+as the single-plate payload. The Android parser accepts both formats so the
+single-plate prototype remains usable while the four-plate hardware is tested.
