@@ -28,7 +28,8 @@ public class MainActivity extends Activity {
     private TextView dataSourceLabel;
     private Button bluetoothActionButton;
     private WeightDisplayState currentDisplayState;
-    private WeightStationConnection stationConnection;
+    private StationConnectionManager connectionManager;
+    private WeightStationConnection.Listener connectionListener;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,11 +53,39 @@ public class MainActivity extends Activity {
         simulateOfflineButton.setOnClickListener(view -> showOfflineState());
         bluetoothActionButton.setOnClickListener(view -> handleBluetoothAction());
 
-        // TEMPORARY: manual entry point for testing UI-4.2 in isolation.
-        // Remove once UI-2.5 wires real navigation from the dashboard.
+        connectionManager = StationConnectionManager.getInstance(this);
+        connectionListener = new WeightStationConnection.Listener() {
+            @Override
+            public void onStateChanged(
+                    WeightStationConnection.State state,
+                    WeightStationConnection.Failure failure
+            ) {
+                runOnUiThread(() -> renderConnectionState(state, failure));
+            }
+
+            @Override
+            public void onReadingReceived(BluetoothReading reading) {
+                showBluetoothReading(reading);
+            }
+
+            @Override
+            public void onInvalidPayload() {
+                runOnUiThread(() -> readingDetail.setText(
+                        R.string.reading_detail_invalid_payload
+                ));
+            }
+        };
+        connectionManager.addListener(connectionListener);
+
+        // Temporary entry points until dashboard navigation is connected.
         Button manageItemsButton = findViewById(R.id.manageItemsButton);
         manageItemsButton.setOnClickListener(
                 view -> startActivity(AddEditItemActivity.newIntentForAdd(this))
+        );
+
+        Button openSettingsButton = findViewById(R.id.openSettingsButton);
+        openSettingsButton.setOnClickListener(
+                view -> startActivity(new Intent(this, SettingsActivity.class))
         );
     }
 
@@ -68,9 +97,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        if (stationConnection != null) {
-            stationConnection.close();
-        }
+        connectionManager.removeListener(connectionListener);
         super.onDestroy();
     }
 
@@ -103,15 +130,18 @@ public class MainActivity extends Activity {
             return;
         }
 
-        WeightStationConnection connection = getOrCreateStationConnection(bluetoothAdapter);
+        WeightStationConnection connection = connectionManager.getOrCreateConnection();
+        if (connection == null) {
+            return;
+        }
         WeightStationConnection.State state = connection.getState();
 
         if (state == WeightStationConnection.State.SCANNING
                 || state == WeightStationConnection.State.CONNECTING
                 || state == WeightStationConnection.State.CONNECTED) {
-            connection.disconnect();
+            connectionManager.disconnect();
         } else {
-            connection.connect();
+            connectionManager.connect();
         }
     }
 
@@ -166,7 +196,11 @@ public class MainActivity extends Activity {
             return;
         }
 
-        WeightStationConnection connection = getOrCreateStationConnection(bluetoothAdapter);
+        WeightStationConnection connection = connectionManager.getOrCreateConnection();
+        if (connection == null) {
+            showBluetoothReadyState();
+            return;
+        }
         WeightStationConnection.State connectionState = connection.getState();
         if (connectionState == WeightStationConnection.State.IDLE) {
             showBluetoothReadyState();
@@ -180,42 +214,8 @@ public class MainActivity extends Activity {
         return bluetoothManager == null ? null : bluetoothManager.getAdapter();
     }
 
-    private WeightStationConnection getOrCreateStationConnection(BluetoothAdapter adapter) {
-        if (stationConnection == null) {
-            WeightStationConnection.Transport transport = new AndroidBleTransport(this, adapter);
-            stationConnection = new WeightStationConnection(
-                    transport,
-                    new WeightStationConnection.Listener() {
-                        @Override
-                        public void onStateChanged(
-                                WeightStationConnection.State state,
-                                WeightStationConnection.Failure failure
-                        ) {
-                            runOnUiThread(() -> renderConnectionState(state, failure));
-                        }
-
-                        @Override
-                        public void onReadingReceived(BluetoothReading reading) {
-                            showBluetoothReading(reading);
-                        }
-
-                        @Override
-                        public void onInvalidPayload() {
-                            runOnUiThread(() -> readingDetail.setText(
-                                    R.string.reading_detail_invalid_payload
-                            ));
-                        }
-                    }
-            );
-        }
-        return stationConnection;
-    }
-
     private void closeStationConnection() {
-        if (stationConnection != null) {
-            stationConnection.close();
-            stationConnection = null;
-        }
+        connectionManager.reset();
     }
 
     private void showBluetoothSetupState(int stationText, int detailText, int buttonText) {
