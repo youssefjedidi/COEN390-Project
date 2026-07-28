@@ -14,6 +14,8 @@ final class DashboardStateCoordinator {
     private final ItemStateTracker itemStateTracker;
     private final RecognitionResult[] latestPlateResults;
     private final boolean[] platesUpdatedThisCycle;
+    private final boolean[] ambiguityHandled;
+    private List<RecognitionResult> completedSnapshot = new ArrayList<>();
     private int updatedPlateCount;
 
     DashboardStateCoordinator(
@@ -47,6 +49,7 @@ final class DashboardStateCoordinator {
         itemStateTracker = new ItemStateTracker(savedProfiles, plateCount);
         latestPlateResults = new RecognitionResult[plateCount + 1];
         platesUpdatedThisCycle = new boolean[plateCount + 1];
+        ambiguityHandled = new boolean[plateCount + 1];
     }
 
     List<TrackedItemState> getStates() {
@@ -72,10 +75,54 @@ final class DashboardStateCoordinator {
             return Optional.empty();
         }
 
+        completedSnapshot = currentSnapshot();
+        for (int index = 1; index <= plateCount; index++) {
+            ambiguityHandled[index] = false;
+        }
         List<TrackedItemState> updatedStates =
-                itemStateTracker.update(currentSnapshot());
+                itemStateTracker.update(completedSnapshot);
         beginNextCycle();
         return Optional.of(updatedStates);
+    }
+
+    List<RecognitionResult> getPendingAmbiguousResults() {
+        List<RecognitionResult> ambiguousResults = new ArrayList<>();
+        for (RecognitionResult result : completedSnapshot) {
+            int plateNumber = result.getReading().getPlateNumber();
+            if (result.getStatus() == RecognitionStatus.AMBIGUOUS
+                    && !ambiguityHandled[plateNumber]) {
+                ambiguousResults.add(result);
+            }
+        }
+        return ambiguousResults;
+    }
+
+    List<TrackedItemState> confirmAmbiguousMatch(int plateNumber, String itemId) {
+        RecognitionResult ambiguousResult = requireAmbiguousResult(plateNumber);
+        ItemProfile selectedItem = null;
+        for (ItemProfile candidate : ambiguousResult.getCandidates()) {
+            if (candidate.getId().equals(itemId)) {
+                selectedItem = candidate;
+                break;
+            }
+        }
+        if (selectedItem == null) {
+            throw new IllegalArgumentException(
+                    "item " + itemId + " is not a candidate for plate " + plateNumber
+            );
+        }
+
+        replaceCompletedResult(
+                plateNumber,
+                RecognitionResult.matched(ambiguousResult.getReading(), selectedItem)
+        );
+        return itemStateTracker.update(completedSnapshot);
+    }
+
+    List<TrackedItemState> leaveAmbiguousMatchUnresolved(int plateNumber) {
+        requireAmbiguousResult(plateNumber);
+        ambiguityHandled[plateNumber] = true;
+        return itemStateTracker.update(completedSnapshot);
     }
 
     private RecognitionResult recognize(PlateReading reading) {
@@ -91,6 +138,31 @@ final class DashboardStateCoordinator {
             snapshot.add(latestPlateResults[plateNumber]);
         }
         return snapshot;
+    }
+
+    private RecognitionResult requireAmbiguousResult(int plateNumber) {
+        if (plateNumber < 1 || plateNumber > plateCount) {
+            throw new IllegalArgumentException(
+                    "plateNumber must be between 1 and " + plateCount
+            );
+        }
+        if (completedSnapshot.size() != plateCount) {
+            throw new IllegalStateException("no completed plate snapshot is available");
+        }
+
+        RecognitionResult result = completedSnapshot.get(plateNumber - 1);
+        if (result.getStatus() != RecognitionStatus.AMBIGUOUS) {
+            throw new IllegalStateException(
+                    "plate " + plateNumber + " does not have an ambiguous reading"
+            );
+        }
+        return result;
+    }
+
+    private void replaceCompletedResult(int plateNumber, RecognitionResult replacement) {
+        List<RecognitionResult> updatedSnapshot = new ArrayList<>(completedSnapshot);
+        updatedSnapshot.set(plateNumber - 1, replacement);
+        completedSnapshot = updatedSnapshot;
     }
 
     private void beginNextCycle() {

@@ -22,6 +22,8 @@ public class DashboardStateCoordinatorTest {
             new ItemProfile("keys", "Keys", 36.0, 42.0);
     private final ItemProfile wallet =
             new ItemProfile("wallet", "Wallet", 140.0, 152.0);
+    private final ItemProfile keyCard =
+            new ItemProfile("key-card", "Key card", 38.0, 44.0);
 
     @Test
     public void startsWithUnknownItems_beforeEveryPlateHasAStableReading() {
@@ -120,6 +122,57 @@ public class DashboardStateCoordinatorTest {
                 TrackedItemStatus.PRESENT,
                 1
         );
+    }
+
+    @Test
+    public void letsTheUserResolveAnAmbiguousPlateReading() {
+        DashboardStateCoordinator coordinator = new DashboardStateCoordinator(
+                Arrays.asList(keys, keyCard),
+                PLATE_COUNT,
+                REQUIRED_SAMPLES,
+                STABILITY_TOLERANCE_GRAMS,
+                EMPTY_WEIGHT_THRESHOLD_GRAMS
+        );
+
+        addStableReading(coordinator, 1, 40.0);
+        addStableReading(coordinator, 2, 0.0);
+        addStableReading(coordinator, 3, 0.0);
+        List<TrackedItemState> ambiguousStates =
+                addStableReading(coordinator, 4, 0.0).get();
+
+        assertState(ambiguousStates, keys, TrackedItemStatus.UNKNOWN, null);
+        assertState(ambiguousStates, keyCard, TrackedItemStatus.UNKNOWN, null);
+        assertEquals(1, coordinator.getPendingAmbiguousResults().size());
+
+        List<TrackedItemState> resolvedStates =
+                coordinator.confirmAmbiguousMatch(1, keys.getId());
+
+        assertState(resolvedStates, keys, TrackedItemStatus.PRESENT, 1);
+        assertState(resolvedStates, keyCard, TrackedItemStatus.MISSING, null);
+        assertTrue(coordinator.getPendingAmbiguousResults().isEmpty());
+    }
+
+    @Test
+    public void leavesCandidatesUnknownWhenTheUserIsNotSure() {
+        DashboardStateCoordinator coordinator = new DashboardStateCoordinator(
+                Arrays.asList(keys, keyCard),
+                PLATE_COUNT,
+                REQUIRED_SAMPLES,
+                STABILITY_TOLERANCE_GRAMS,
+                EMPTY_WEIGHT_THRESHOLD_GRAMS
+        );
+
+        addStableReading(coordinator, 1, 40.0);
+        addStableReading(coordinator, 2, 0.0);
+        addStableReading(coordinator, 3, 0.0);
+        addStableReading(coordinator, 4, 0.0);
+
+        List<TrackedItemState> unresolvedStates =
+                coordinator.leaveAmbiguousMatchUnresolved(1);
+
+        assertState(unresolvedStates, keys, TrackedItemStatus.UNKNOWN, null);
+        assertState(unresolvedStates, keyCard, TrackedItemStatus.UNKNOWN, null);
+        assertTrue(coordinator.getPendingAmbiguousResults().isEmpty());
     }
 
     private DashboardStateCoordinator newCoordinator() {
