@@ -106,6 +106,15 @@
                 tools:text="3 of 4" />
         </LinearLayout>
 
+        <TextView
+            android:id="@+id/dashboardDataStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/dashboard_data_waiting"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
         <LinearLayout
             android:id="@+id/dashboardEmptyState"
             android:layout_width="match_parent"

@@ -1,9 +1,13 @@
 package com.coen390.smartexit;
 
+import android.Manifest;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
+import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.View;
@@ -11,12 +15,17 @@ import android.widget.Button;
 import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 public class MainActivity extends Activity {
     private static final int BLUETOOTH_PERMISSION_REQUEST = 1001;
+    private static final int NOTIFICATION_PERMISSION_REQUEST = 1002;
+    private static final String NOTIFICATION_PERMISSION_PREFS = "notification_permission_prefs";
+    private static final String KEY_NOTIFICATION_PERMISSION_REQUESTED = "permission_requested";
     private static final int MAX_DASHBOARD_ITEMS = 4;
     private static final int REQUIRED_STABLE_SAMPLES = 3;
     private static final double STABILITY_TOLERANCE_GRAMS = 5.0;
@@ -36,6 +45,7 @@ public class MainActivity extends Activity {
     private View dashboardItemGrid;
     private View dashboardGridSecondRow;
     private TextView trackedItemCount;
+    private TextView dashboardDataStatus;
     private View[] itemRows;
     private TextView[] itemNames;
     private TextView[] itemStatuses;
@@ -44,6 +54,13 @@ public class MainActivity extends Activity {
     private WeightDisplayState currentDisplayState;
     private DashboardStateCoordinator dashboardStateCoordinator;
     private ItemProfileRepository itemProfileRepository;
+    private DisconnectSnapshotRepository disconnectSnapshotRepository;
+    private DisconnectNotifier disconnectNotifier;
+    private final DisconnectEventCoordinator disconnectEventCoordinator =
+            new DisconnectEventCoordinator();
+    private List<ItemProfile> visibleProfiles = new ArrayList<>();
+    private List<TrackedItemState> latestValidDashboardStates;
+    private long latestValidDashboardTimestamp;
     private StationConnectionManager connectionManager;
     private WeightStationConnection.Listener connectionListener;
 
@@ -61,6 +78,8 @@ public class MainActivity extends Activity {
         bluetoothActionButton = findViewById(R.id.bluetoothActionButton);
 
         itemProfileRepository = new ItemProfileRepository(this);
+        disconnectSnapshotRepository = new DisconnectSnapshotRepository(this);
+        disconnectNotifier = new DisconnectNotifier(this);
         bindDashboardViews();
         bluetoothActionButton.setOnClickListener(view -> handleBluetoothAction());
 
@@ -71,7 +90,7 @@ public class MainActivity extends Activity {
                     WeightStationConnection.State state,
                     WeightStationConnection.Failure failure
             ) {
-                runOnUiThread(() -> renderConnectionState(state, failure));
+                runOnUiThread(() -> handleConnectionState(state, failure));
             }
 
             @Override
@@ -107,6 +126,7 @@ public class MainActivity extends Activity {
         super.onResume();
         showSavedItems();
         updateBluetoothReadiness();
+        requestNotificationPermissionIfNeeded();
     }
 
     @Override
@@ -219,7 +239,7 @@ public class MainActivity extends Activity {
         if (connectionState == WeightStationConnection.State.IDLE) {
             showBluetoothReadyState();
         } else {
-            renderConnectionState(connectionState, connection.getFailure());
+            handleConnectionState(connectionState, connection.getFailure());
         }
     }
 
@@ -372,6 +392,7 @@ public class MainActivity extends Activity {
         dashboardItemGrid = findViewById(R.id.dashboardItemGrid);
         dashboardGridSecondRow = findViewById(R.id.dashboardGridSecondRow);
         trackedItemCount = findViewById(R.id.trackedItemCount);
+        dashboardDataStatus = findViewById(R.id.dashboardDataStatus);
 
         itemRows = new View[] {
                 findViewById(R.id.itemRow1),
@@ -406,7 +427,18 @@ public class MainActivity extends Activity {
     private void showSavedItems() {
         List<ItemProfile> savedProfiles = itemProfileRepository.getAll();
         int visibleCount = Math.min(savedProfiles.size(), MAX_DASHBOARD_ITEMS);
-        List<ItemProfile> visibleProfiles = savedProfiles.subList(0, visibleCount);
+        List<ItemProfile> nextVisibleProfiles =
+                new ArrayList<>(savedProfiles.subList(0, visibleCount));
+
+        if (containsSameItems(latestValidDashboardStates, nextVisibleProfiles)) {
+            latestValidDashboardStates = DisconnectSnapshot
+                    .from(latestValidDashboardTimestamp, latestValidDashboardStates)
+                    .restore(nextVisibleProfiles);
+        } else {
+            latestValidDashboardStates = null;
+            latestValidDashboardTimestamp = 0L;
+        }
+        visibleProfiles = nextVisibleProfiles;
 
         addItemButton.setVisibility(
                 visibleCount == MAX_DASHBOARD_ITEMS ? View.GONE : View.VISIBLE
@@ -419,7 +451,21 @@ public class MainActivity extends Activity {
                 STABILITY_TOLERANCE_GRAMS,
                 EMPTY_WEIGHT_THRESHOLD_GRAMS
         );
-        renderDashboard(dashboardStateCoordinator.getStates());
+
+        if (latestValidDashboardStates != null) {
+            renderDashboard(latestValidDashboardStates);
+            showLiveDashboardTime(latestValidDashboardTimestamp);
+            return;
+        }
+
+        DisconnectSnapshot cachedSnapshot = disconnectSnapshotRepository.load();
+        if (cachedSnapshot != null) {
+            renderDashboard(cachedSnapshot.restore(visibleProfiles));
+            showCachedDashboardTime(cachedSnapshot.getTimestampMillis());
+        } else {
+            renderDashboard(dashboardStateCoordinator.getStates());
+            dashboardDataStatus.setText(R.string.dashboard_data_waiting);
+        }
     }
 
     private void renderDashboard(List<TrackedItemState> states) {
@@ -556,7 +602,110 @@ public class MainActivity extends Activity {
                 .processReading(
                         new PlateReading(reading.getPlateNumber(), weightGrams)
                 )
-                .ifPresent(this::renderDashboard);
+                .ifPresent(this::handleLiveDashboardUpdate);
+    }
+
+    private void handleLiveDashboardUpdate(List<TrackedItemState> states) {
+        latestValidDashboardStates = new ArrayList<>(states);
+        latestValidDashboardTimestamp = System.currentTimeMillis();
+        renderDashboard(states);
+        showLiveDashboardTime(latestValidDashboardTimestamp);
+    }
+
+    private void handleConnectionState(
+            WeightStationConnection.State state,
+            WeightStationConnection.Failure failure
+    ) {
+        renderConnectionState(state, failure);
+
+        Optional<DisconnectSnapshot> disconnectSnapshot =
+                disconnectEventCoordinator.onStateChanged(
+                        state,
+                        latestValidDashboardStates,
+                        System.currentTimeMillis()
+                );
+        if (disconnectSnapshot.isPresent()) {
+            handleDisconnectSnapshot(disconnectSnapshot.get());
+        }
+
+        if (state == WeightStationConnection.State.DISCONNECTED) {
+            markLatestReadingOffline();
+        }
+    }
+
+    private void handleDisconnectSnapshot(DisconnectSnapshot snapshot) {
+        disconnectSnapshotRepository.save(snapshot);
+        renderDashboard(snapshot.restore(visibleProfiles));
+        showCachedDashboardTime(snapshot.getTimestampMillis());
+        disconnectNotifier.show(snapshot);
+
+        latestValidDashboardStates = null;
+        latestValidDashboardTimestamp = 0L;
+    }
+
+    private void showLiveDashboardTime(long timestampMillis) {
+        dashboardDataStatus.setText(
+                getString(
+                        R.string.dashboard_data_live,
+                        formatTime(timestampMillis)
+                )
+        );
+    }
+
+    private void showCachedDashboardTime(long timestampMillis) {
+        dashboardDataStatus.setText(
+                getString(
+                        R.string.dashboard_data_cached,
+                        formatTime(timestampMillis)
+                )
+        );
+    }
+
+    private boolean containsSameItems(
+            List<TrackedItemState> states,
+            List<ItemProfile> profiles
+    ) {
+        if (states == null || states.size() != profiles.size()) {
+            return false;
+        }
+        for (int index = 0; index < profiles.size(); index++) {
+            if (!states.get(index).getItem().getId().equals(profiles.get(index).getId())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void markLatestReadingOffline() {
+        if (currentDisplayState != null && currentDisplayState.source == DataSource.LIVE) {
+            renderState(currentDisplayState.asOffline());
+        }
+    }
+
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED
+                || visibleProfiles.isEmpty()) {
+            return;
+        }
+
+        boolean alreadyRequested = getSharedPreferences(
+                NOTIFICATION_PERMISSION_PREFS,
+                Context.MODE_PRIVATE
+        ).getBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED, false);
+        if (alreadyRequested) {
+            return;
+        }
+
+        getSharedPreferences(NOTIFICATION_PERMISSION_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED, true)
+                .apply();
+        requestPermissions(
+                new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                NOTIFICATION_PERMISSION_REQUEST
+        );
     }
 
     // BLE callbacks may arrive on a background thread.
@@ -634,7 +783,11 @@ public class MainActivity extends Activity {
     }
 
     private String currentTime() {
-        return timeFormat.format(new Date());
+        return formatTime(System.currentTimeMillis());
+    }
+
+    private String formatTime(long timestampMillis) {
+        return timeFormat.format(new Date(timestampMillis));
     }
 
     private enum DataSource {
@@ -679,6 +832,16 @@ public class MainActivity extends Activity {
 
         static WeightDisplayState offline(String displayTime) {
             return new WeightDisplayState(DataSource.OFFLINE, TrayStatus.UNKNOWN, null, "", displayTime);
+        }
+
+        WeightDisplayState asOffline() {
+            return new WeightDisplayState(
+                    DataSource.OFFLINE,
+                    status,
+                    weightGrams,
+                    itemLabel,
+                    displayTime
+            );
         }
 
         private static WeightDisplayState item(DataSource source, String label, int weightGrams, String displayTime) {
