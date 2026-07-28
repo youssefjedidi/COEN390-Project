@@ -18,6 +18,9 @@ import java.util.Locale;
 public class MainActivity extends Activity {
     private static final int BLUETOOTH_PERMISSION_REQUEST = 1001;
     private static final int MAX_DASHBOARD_ITEMS = 4;
+    private static final int REQUIRED_STABLE_SAMPLES = 3;
+    private static final double STABILITY_TOLERANCE_GRAMS = 5.0;
+    private static final double EMPTY_WEIGHT_THRESHOLD_GRAMS = 5.0;
 
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("h:mm a", Locale.getDefault());
 
@@ -38,6 +41,7 @@ public class MainActivity extends Activity {
     private TextView[] itemStatuses;
     private TextView[] itemDetails;
     private WeightDisplayState currentDisplayState;
+    private DashboardStateCoordinator dashboardStateCoordinator;
     private ItemProfileRepository itemProfileRepository;
     private StationConnectionManager connectionManager;
     private WeightStationConnection.Listener connectionListener;
@@ -400,11 +404,14 @@ public class MainActivity extends Activity {
                 visibleCount == MAX_DASHBOARD_ITEMS ? View.GONE : View.VISIBLE
         );
 
-        ItemStateTracker tracker = new ItemStateTracker(
+        dashboardStateCoordinator = new DashboardStateCoordinator(
                 visibleProfiles,
-                MAX_DASHBOARD_ITEMS
+                MAX_DASHBOARD_ITEMS,
+                REQUIRED_STABLE_SAMPLES,
+                STABILITY_TOLERANCE_GRAMS,
+                EMPTY_WEIGHT_THRESHOLD_GRAMS
         );
-        renderDashboard(tracker.getStates());
+        renderDashboard(dashboardStateCoordinator.getStates());
     }
 
     private void renderDashboard(List<TrackedItemState> states) {
@@ -489,17 +496,52 @@ public class MainActivity extends Activity {
     }
 
     private void showBluetoothReading(BluetoothReading reading) {
+        runOnUiThread(() -> {
+            renderLatestWeightReading(reading);
+            updateDashboardFromReading(reading);
+        });
+    }
+
+    private void renderLatestWeightReading(BluetoothReading reading) {
         if (reading.getStatus() == BluetoothReading.Status.NO_LOAD) {
-            onBluetoothTrayClear();
+            renderState(WeightDisplayState.liveClear(currentTime()));
             return;
         }
 
         if (reading.getStatus() == BluetoothReading.Status.ERROR) {
-            runOnUiThread(() -> readingDetail.setText(R.string.reading_detail_sensor_error));
+            readingDetail.setText(R.string.reading_detail_sensor_error);
             return;
         }
 
-        onBluetoothWeightReading(Math.round(reading.getWeightGrams()), "tray load");
+        String label = reading.hasPlateNumber()
+                ? getString(R.string.reading_label_plate, reading.getPlateNumber())
+                : getString(R.string.reading_label_tray);
+        renderState(
+                WeightDisplayState.liveItem(
+                        label,
+                        Math.round(reading.getWeightGrams()),
+                        currentTime()
+                )
+        );
+    }
+
+    private void updateDashboardFromReading(BluetoothReading reading) {
+        if (!reading.hasPlateNumber() || dashboardStateCoordinator == null) {
+            return;
+        }
+        if (reading.getStatus() == BluetoothReading.Status.ERROR
+                || reading.getStatus() == BluetoothReading.Status.UNSTABLE) {
+            return;
+        }
+
+        double weightGrams = reading.getStatus() == BluetoothReading.Status.NO_LOAD
+                ? 0.0
+                : reading.getWeightGrams();
+        dashboardStateCoordinator
+                .processReading(
+                        new PlateReading(reading.getPlateNumber(), weightGrams)
+                )
+                .ifPresent(this::renderDashboard);
     }
 
     // BLE callbacks may arrive on a background thread.

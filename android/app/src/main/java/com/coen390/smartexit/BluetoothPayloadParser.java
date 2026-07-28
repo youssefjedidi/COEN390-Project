@@ -1,13 +1,14 @@
 package com.coen390.smartexit;
 
 final class BluetoothPayloadParser {
+    private static final int MIN_PLATE_NUMBER = 1;
+    private static final int MAX_PLATE_NUMBER = 4;
     private static final float MAX_WEIGHT_GRAMS = 1000.0f;
     private static final int MAX_SEQUENCE = 9999;
 
     private BluetoothPayloadParser() {
     }
 
-    // Reject incomplete readings before they reach the display logic.
     static ParseResult parse(String payload) {
         if (payload == null || payload.isEmpty()) {
             return ParseResult.invalid("Payload is empty.");
@@ -19,17 +20,24 @@ final class BluetoothPayloadParser {
 
         String[] fields = payload.split(",", -1);
         if (fields.length != 3) {
-            return ParseResult.invalid("Expected weight, status, and sequence fields.");
+            return ParseResult.invalid("Expected three comma-separated fields.");
         }
 
+        BluetoothReading.Status legacyStatus = parseStatus(fields[1]);
+        if (legacyStatus != null) {
+            return parseLegacyReading(fields, legacyStatus);
+        }
+
+        return parsePlateReading(fields);
+    }
+
+    private static ParseResult parseLegacyReading(
+            String[] fields,
+            BluetoothReading.Status status
+    ) {
         Float weight = parseWeight(fields[0]);
         if (weight == null) {
             return ParseResult.invalid("Weight is not a valid value.");
-        }
-
-        BluetoothReading.Status status = parseStatus(fields[1]);
-        if (status == null) {
-            return ParseResult.invalid("Status is not recognized.");
         }
 
         Integer sequence = parseSequence(fields[2]);
@@ -38,6 +46,39 @@ final class BluetoothPayloadParser {
         }
 
         return ParseResult.valid(new BluetoothReading(weight, status, sequence));
+    }
+
+    private static ParseResult parsePlateReading(String[] fields) {
+        Integer plateNumber = parsePlateNumber(fields[0]);
+        if (plateNumber == null) {
+            return ParseResult.invalid("Plate number must be between 1 and 4.");
+        }
+
+        Float weight = parseWeight(fields[1]);
+        if (weight == null) {
+            return ParseResult.invalid("Weight is not a valid value.");
+        }
+
+        BluetoothReading.Status status = parseStatus(fields[2]);
+        if (status == null) {
+            return ParseResult.invalid("Status is not recognized.");
+        }
+
+        return ParseResult.valid(
+                BluetoothReading.forPlate(plateNumber, weight, status)
+        );
+    }
+
+    private static Integer parsePlateNumber(String field) {
+        try {
+            int plateNumber = Integer.parseInt(field);
+            if (plateNumber < MIN_PLATE_NUMBER || plateNumber > MAX_PLATE_NUMBER) {
+                return null;
+            }
+            return plateNumber;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     private static Float parseWeight(String field) {
