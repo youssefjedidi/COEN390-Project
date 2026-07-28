@@ -78,6 +78,23 @@
     <string name="calibration_label">Calibration</string>
     <string name="calibration_status_uncalibrated">Not calibrated yet</string>
     <string name="calibration_status_format">Calibrated range: %1$.0f\u2013%2$.0f g</string>
+    <string name="calibration_plate_label">Plate used for calibration</string>
+    <string-array name="calibration_plates">
+        <item>Plate 1</item>
+        <item>Plate 2</item>
+        <item>Plate 3</item>
+        <item>Plate 4</item>
+    </string-array>
+    <string name="calibration_start">Start calibration</string>
+    <string name="calibration_restart">Restart calibration</string>
+    <string name="calibration_again">Calibrate again</string>
+    <string name="calibration_station_required">Connect the station before calibrating an item.</string>
+    <string name="calibration_instructions">Place the item alone on the selected plate, then start calibration.</string>
+    <string name="calibration_collecting_format">Plate %1$d: collecting stable readings (%2$d of %3$d)</string>
+    <string name="calibration_waiting_for_item">Place the item on plate %1$d.</string>
+    <string name="calibration_waiting_for_stable">Hold the item still while the reading settles.</string>
+    <string name="calibration_ready_to_save">Calibration is ready. Save the item to keep this range.</string>
+    <string name="calibration_invalid_reading">The station sent an invalid reading. Waiting for the next update.</string>
     <string name="save">Save</string>
     <string name="cancel">Cancel</string>
     <string name="item_name_required">Please enter a name for this item</string>
