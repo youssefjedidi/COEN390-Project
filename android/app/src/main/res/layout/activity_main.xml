@@ -1,23 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/screen_background"
-    android:fillViewport="true">
+    android:fillViewport="true"
+    android:fitsSystemWindows="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:paddingStart="24dp"
+        android:paddingTop="20dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="32dp">
 
-        <TextView
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/app_name"
-            android:textColor="@color/text_primary"
-            android:textSize="28sp"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/app_name"
+                android:textColor="@color/text_primary"
+                android:textSize="28sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/openSettingsButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:background="@drawable/secondary_button_background"
+                android:minWidth="0dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:text="@string/settings"
+                android:textAllCaps="false"
+                android:textColor="@color/button_secondary_text"
+                android:textSize="14sp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/stationStatus"
@@ -49,9 +75,322 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="28dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/tracked_items_title"
+                android:textColor="@color/text_primary"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/trackedItemCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/tracked_item_count_empty"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp"
+                tools:text="3 of 4" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/dashboardEmptyState"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/info_card_background"
+            android:orientation="vertical"
+            android:padding="20dp"
+            tools:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/no_tracked_items_title"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/no_tracked_items_detail"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/dashboardItemGrid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:weightSum="2">
+
+                <LinearLayout
+                    android:id="@+id/itemRow1"
+                    android:layout_width="0dp"
+                    android:layout_height="168dp"
+                    android:layout_marginEnd="5dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/card_background"
+                    android:orientation="vertical"
+                    android:padding="16dp"
+                    android:visibility="invisible"
+                    tools:visibility="visible">
+
+                    <TextView
+                        android:id="@+id/itemStatus1"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/status_connected_background"
+                        android:gravity="center"
+                        android:minWidth="78dp"
+                        android:paddingStart="10dp"
+                        android:paddingTop="5dp"
+                        android:paddingEnd="10dp"
+                        android:paddingBottom="5dp"
+                        android:textColor="@color/status_connected_text"
+                        android:textSize="12sp"
+                        tools:text="Present" />
+
+                    <TextView
+                        android:id="@+id/itemName1"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:ellipsize="end"
+                        android:maxLines="2"
+                        android:textColor="@color/text_primary"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        tools:text="Keys" />
+
+                    <TextView
+                        android:id="@+id/itemDetail1"
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_marginTop="6dp"
+                        android:layout_weight="1"
+                        android:ellipsize="end"
+                        android:gravity="bottom"
+                        android:maxLines="2"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        tools:text="Detected on plate 3" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/itemRow2"
+                    android:layout_width="0dp"
+                    android:layout_height="168dp"
+                    android:layout_marginStart="5dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/card_background"
+                    android:orientation="vertical"
+                    android:padding="16dp"
+                    android:visibility="invisible"
+                    tools:visibility="visible">
+
+                    <TextView
+                        android:id="@+id/itemStatus2"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/status_missing_background"
+                        android:gravity="center"
+                        android:minWidth="78dp"
+                        android:paddingStart="10dp"
+                        android:paddingTop="5dp"
+                        android:paddingEnd="10dp"
+                        android:paddingBottom="5dp"
+                        android:textColor="@color/status_missing_text"
+                        android:textSize="12sp"
+                        tools:text="Missing" />
+
+                    <TextView
+                        android:id="@+id/itemName2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:ellipsize="end"
+                        android:maxLines="2"
+                        android:textColor="@color/text_primary"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        tools:text="Medication" />
+
+                    <TextView
+                        android:id="@+id/itemDetail2"
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_marginTop="6dp"
+                        android:layout_weight="1"
+                        android:ellipsize="end"
+                        android:gravity="bottom"
+                        android:maxLines="2"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        tools:text="Not detected on any plate" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/dashboardGridSecondRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal"
+                android:visibility="gone"
+                android:weightSum="2"
+                tools:visibility="visible">
+
+                <LinearLayout
+                    android:id="@+id/itemRow3"
+                    android:layout_width="0dp"
+                    android:layout_height="168dp"
+                    android:layout_marginEnd="5dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/card_background"
+                    android:orientation="vertical"
+                    android:padding="16dp"
+                    android:visibility="invisible"
+                    tools:visibility="visible">
+
+                    <TextView
+                        android:id="@+id/itemStatus3"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/status_waiting_background"
+                        android:gravity="center"
+                        android:minWidth="78dp"
+                        android:paddingStart="10dp"
+                        android:paddingTop="5dp"
+                        android:paddingEnd="10dp"
+                        android:paddingBottom="5dp"
+                        android:textColor="@color/status_waiting_text"
+                        android:textSize="12sp"
+                        tools:text="Unknown" />
+
+                    <TextView
+                        android:id="@+id/itemName3"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:ellipsize="end"
+                        android:maxLines="2"
+                        android:textColor="@color/text_primary"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        tools:text="Wallet" />
+
+                    <TextView
+                        android:id="@+id/itemDetail3"
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_marginTop="6dp"
+                        android:layout_weight="1"
+                        android:ellipsize="end"
+                        android:gravity="bottom"
+                        android:maxLines="2"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        tools:text="Waiting for a stable reading" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/itemRow4"
+                    android:layout_width="0dp"
+                    android:layout_height="168dp"
+                    android:layout_marginStart="5dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/card_background"
+                    android:orientation="vertical"
+                    android:padding="16dp"
+                    android:visibility="invisible"
+                    tools:visibility="visible">
+
+                    <TextView
+                        android:id="@+id/itemStatus4"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/status_waiting_background"
+                        android:gravity="center"
+                        android:minWidth="78dp"
+                        android:paddingStart="10dp"
+                        android:paddingTop="5dp"
+                        android:paddingEnd="10dp"
+                        android:paddingBottom="5dp"
+                        android:textColor="@color/status_waiting_text"
+                        android:textSize="12sp"
+                        tools:text="Unknown" />
+
+                    <TextView
+                        android:id="@+id/itemName4"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:ellipsize="end"
+                        android:maxLines="2"
+                        android:textColor="@color/text_primary"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        tools:text="Work badge" />
+
+                    <TextView
+                        android:id="@+id/itemDetail4"
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_marginTop="6dp"
+                        android:layout_weight="1"
+                        android:ellipsize="end"
+                        android:gravity="bottom"
+                        android:maxLines="2"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        tools:text="Calibration required" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/addItemButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/primary_button_background"
+            android:text="@string/add_item"
+            android:textAllCaps="false"
+            android:textColor="@color/button_primary_text"
+            android:textSize="15sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:text="@string/latest_station_reading"
+            android:textColor="@color/text_primary"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
             android:background="@drawable/card_background"
             android:orientation="vertical"
-            android:padding="20dp">
+            android:padding="18dp">
 
             <TextView
                 android:id="@+id/readingState"
@@ -59,108 +398,44 @@
                 android:layout_height="wrap_content"
                 android:text="@string/reading_state_waiting"
                 android:textColor="@color/text_secondary"
-                android:textSize="16sp" />
+                android:textSize="14sp" />
 
             <TextView
                 android:id="@+id/weightValue"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="4dp"
                 android:text="@string/empty_weight"
                 android:textColor="@color/text_primary"
-                android:textSize="56sp"
+                android:textSize="36sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/lastUpdate"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="4dp"
                 android:text="@string/no_data_yet"
                 android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
+                android:textSize="13sp" />
 
             <TextView
                 android:id="@+id/dataSourceLabel"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="6dp"
                 android:text="@string/data_source_waiting"
                 android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
+                android:textSize="13sp" />
 
             <TextView
                 android:id="@+id/readingDetail"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="18dp"
+                android:layout_marginTop="12dp"
                 android:text="@string/reading_detail_waiting"
                 android:textColor="@color/text_secondary"
-                android:textSize="15sp" />
+                android:textSize="14sp" />
         </LinearLayout>
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="26dp"
-            android:text="@string/mock_controls_title"
-            android:textColor="@color/text_primary"
-            android:textSize="18sp"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/simulateItemButton"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/primary_button_background"
-            android:text="@string/simulate_item"
-            android:textAllCaps="false"
-            android:textColor="@color/button_primary_text"
-            android:textSize="15sp" />
-
-        <Button
-            android:id="@+id/clearTrayButton"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/secondary_button_background"
-            android:text="@string/clear_tray"
-            android:textAllCaps="false"
-            android:textColor="@color/button_secondary_text"
-            android:textSize="15sp" />
-
-        <Button
-            android:id="@+id/simulateOfflineButton"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/warning_button_background"
-            android:text="@string/simulate_offline"
-            android:textAllCaps="false"
-            android:textColor="@color/button_warning_text"
-            android:textSize="15sp" />
-
-        <Button
-            android:id="@+id/manageItemsButton"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/secondary_button_background"
-            android:text="@string/manage_items_temp"
-            android:textAllCaps="false"
-            android:textColor="@color/button_secondary_text"
-            android:textSize="15sp" />
-
-        <Button
-            android:id="@+id/openSettingsButton"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/secondary_button_background"
-            android:text="@string/open_settings_temp"
-            android:textAllCaps="false"
-            android:textColor="@color/button_secondary_text"
-            android:textSize="15sp" />
     </LinearLayout>
 </ScrollView>
