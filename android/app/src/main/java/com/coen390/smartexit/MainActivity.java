@@ -11,6 +11,7 @@ import android.widget.Button;
 import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -36,6 +37,7 @@ public class MainActivity extends Activity {
     private View dashboardItemGrid;
     private View dashboardGridSecondRow;
     private TextView trackedItemCount;
+    private TextView dashboardDataStatus;
     private View[] itemRows;
     private TextView[] itemNames;
     private TextView[] itemStatuses;
@@ -44,6 +46,8 @@ public class MainActivity extends Activity {
     private WeightDisplayState currentDisplayState;
     private DashboardStateCoordinator dashboardStateCoordinator;
     private ItemProfileRepository itemProfileRepository;
+    private DisconnectSnapshotRepository disconnectSnapshotRepository;
+    private List<ItemProfile> visibleProfiles = new ArrayList<>();
     private StationConnectionManager connectionManager;
     private WeightStationConnection.Listener connectionListener;
 
@@ -61,6 +65,7 @@ public class MainActivity extends Activity {
         bluetoothActionButton = findViewById(R.id.bluetoothActionButton);
 
         itemProfileRepository = new ItemProfileRepository(this);
+        disconnectSnapshotRepository = new DisconnectSnapshotRepository(this);
         bindDashboardViews();
         bluetoothActionButton.setOnClickListener(view -> handleBluetoothAction());
 
@@ -71,7 +76,7 @@ public class MainActivity extends Activity {
                     WeightStationConnection.State state,
                     WeightStationConnection.Failure failure
             ) {
-                runOnUiThread(() -> renderConnectionState(state, failure));
+                runOnUiThread(() -> handleConnectionState(state, failure));
             }
 
             @Override
@@ -107,6 +112,7 @@ public class MainActivity extends Activity {
         super.onResume();
         showSavedItems();
         updateBluetoothReadiness();
+        NotificationPermissionHelper.requestIfNeeded(this, !visibleProfiles.isEmpty());
     }
 
     @Override
@@ -219,7 +225,7 @@ public class MainActivity extends Activity {
         if (connectionState == WeightStationConnection.State.IDLE) {
             showBluetoothReadyState();
         } else {
-            renderConnectionState(connectionState, connection.getFailure());
+            handleConnectionState(connectionState, connection.getFailure());
         }
     }
 
@@ -372,6 +378,7 @@ public class MainActivity extends Activity {
         dashboardItemGrid = findViewById(R.id.dashboardItemGrid);
         dashboardGridSecondRow = findViewById(R.id.dashboardGridSecondRow);
         trackedItemCount = findViewById(R.id.trackedItemCount);
+        dashboardDataStatus = findViewById(R.id.dashboardDataStatus);
 
         itemRows = new View[] {
                 findViewById(R.id.itemRow1),
@@ -406,7 +413,9 @@ public class MainActivity extends Activity {
     private void showSavedItems() {
         List<ItemProfile> savedProfiles = itemProfileRepository.getAll();
         int visibleCount = Math.min(savedProfiles.size(), MAX_DASHBOARD_ITEMS);
-        List<ItemProfile> visibleProfiles = savedProfiles.subList(0, visibleCount);
+        List<ItemProfile> nextVisibleProfiles =
+                new ArrayList<>(savedProfiles.subList(0, visibleCount));
+        visibleProfiles = nextVisibleProfiles;
 
         addItemButton.setVisibility(
                 visibleCount == MAX_DASHBOARD_ITEMS ? View.GONE : View.VISIBLE
@@ -419,7 +428,22 @@ public class MainActivity extends Activity {
                 STABILITY_TOLERANCE_GRAMS,
                 EMPTY_WEIGHT_THRESHOLD_GRAMS
         );
-        renderDashboard(dashboardStateCoordinator.getStates());
+
+        DisconnectSnapshot liveSnapshot = connectionManager.getLatestDashboardSnapshot();
+        if (liveSnapshot != null) {
+            renderDashboard(liveSnapshot.restore(visibleProfiles));
+            showLiveDashboardTime(liveSnapshot.getTimestampMillis());
+            return;
+        }
+
+        DisconnectSnapshot cachedSnapshot = disconnectSnapshotRepository.load();
+        if (cachedSnapshot != null) {
+            renderDashboard(cachedSnapshot.restore(visibleProfiles));
+            showCachedDashboardTime(cachedSnapshot.getTimestampMillis());
+        } else {
+            renderDashboard(dashboardStateCoordinator.getStates());
+            dashboardDataStatus.setText(R.string.dashboard_data_waiting);
+        }
     }
 
     private void renderDashboard(List<TrackedItemState> states) {
@@ -556,7 +580,58 @@ public class MainActivity extends Activity {
                 .processReading(
                         new PlateReading(reading.getPlateNumber(), weightGrams)
                 )
-                .ifPresent(this::renderDashboard);
+                .ifPresent(this::handleLiveDashboardUpdate);
+    }
+
+    private void handleLiveDashboardUpdate(List<TrackedItemState> states) {
+        long timestampMillis = System.currentTimeMillis();
+        connectionManager.recordDashboardStates(states, timestampMillis);
+        renderDashboard(states);
+        showLiveDashboardTime(timestampMillis);
+    }
+
+    private void handleConnectionState(
+            WeightStationConnection.State state,
+            WeightStationConnection.Failure failure
+    ) {
+        renderConnectionState(state, failure);
+
+        if (state == WeightStationConnection.State.DISCONNECTED) {
+            showSavedDisconnectSnapshot();
+            markLatestReadingOffline();
+        }
+    }
+
+    private void showSavedDisconnectSnapshot() {
+        DisconnectSnapshot snapshot = disconnectSnapshotRepository.load();
+        if (snapshot != null) {
+            renderDashboard(snapshot.restore(visibleProfiles));
+            showCachedDashboardTime(snapshot.getTimestampMillis());
+        }
+    }
+
+    private void showLiveDashboardTime(long timestampMillis) {
+        dashboardDataStatus.setText(
+                getString(
+                        R.string.dashboard_data_live,
+                        formatTime(timestampMillis)
+                )
+        );
+    }
+
+    private void showCachedDashboardTime(long timestampMillis) {
+        dashboardDataStatus.setText(
+                getString(
+                        R.string.dashboard_data_cached,
+                        formatTime(timestampMillis)
+                )
+        );
+    }
+
+    private void markLatestReadingOffline() {
+        if (currentDisplayState != null && currentDisplayState.source == DataSource.LIVE) {
+            renderState(currentDisplayState.asOffline());
+        }
     }
 
     // BLE callbacks may arrive on a background thread.
@@ -634,7 +709,11 @@ public class MainActivity extends Activity {
     }
 
     private String currentTime() {
-        return timeFormat.format(new Date());
+        return formatTime(System.currentTimeMillis());
+    }
+
+    private String formatTime(long timestampMillis) {
+        return timeFormat.format(new Date(timestampMillis));
     }
 
     private enum DataSource {
@@ -679,6 +758,16 @@ public class MainActivity extends Activity {
 
         static WeightDisplayState offline(String displayTime) {
             return new WeightDisplayState(DataSource.OFFLINE, TrayStatus.UNKNOWN, null, "", displayTime);
+        }
+
+        WeightDisplayState asOffline() {
+            return new WeightDisplayState(
+                    DataSource.OFFLINE,
+                    status,
+                    weightGrams,
+                    itemLabel,
+                    displayTime
+            );
         }
 
         private static WeightDisplayState item(DataSource source, String label, int weightGrams, String displayTime) {
