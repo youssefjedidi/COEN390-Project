@@ -15,9 +15,31 @@ public class BluetoothPayloadParserTest {
         assertTrue(result.getErrorMessage(), result.isValid());
         BluetoothReading reading = result.getReading();
         assertNotNull(reading);
+        assertFalse(reading.hasPlateNumber());
         assertEquals(142.3f, reading.getWeightGrams(), 0.001f);
         assertEquals(BluetoothReading.Status.OK, reading.getStatus());
         assertEquals(7, reading.getSequence());
+    }
+
+    @Test
+    public void parsesFourPlateWeightReading() {
+        BluetoothPayloadParser.ParseResult result =
+                BluetoothPayloadParser.parse("2,142.3,OK");
+
+        assertTrue(result.getErrorMessage(), result.isValid());
+        BluetoothReading reading = result.getReading();
+        assertNotNull(reading);
+        assertTrue(reading.hasPlateNumber());
+        assertEquals(2, reading.getPlateNumber());
+        assertEquals(142.3f, reading.getWeightGrams(), 0.001f);
+        assertEquals(BluetoothReading.Status.OK, reading.getStatus());
+    }
+
+    @Test
+    public void acceptsEveryDocumentedFourPlateStatus() {
+        assertPlateStatus("1,0.0,NO_LOAD", 1, BluetoothReading.Status.NO_LOAD);
+        assertPlateStatus("3,141.8,UNSTABLE", 3, BluetoothReading.Status.UNSTABLE);
+        assertPlateStatus("4,0.0,ERROR", 4, BluetoothReading.Status.ERROR);
     }
 
     @Test
@@ -58,6 +80,12 @@ public class BluetoothPayloadParserTest {
     }
 
     @Test
+    public void rejectsPlateNumberOutsideFourPlateRange() {
+        assertInvalid("0,142.3,OK");
+        assertInvalid("5,142.3,OK");
+    }
+
+    @Test
     public void rejectsUnexpectedWhitespace() {
         assertInvalid(" 142.3,OK,7");
         assertInvalid("142.3, OK,7");
@@ -69,6 +97,19 @@ public class BluetoothPayloadParserTest {
 
         assertTrue(result.getErrorMessage(), result.isValid());
         assertNotNull(result.getReading());
+        assertEquals(expectedStatus, result.getReading().getStatus());
+    }
+
+    private void assertPlateStatus(
+            String payload,
+            int expectedPlate,
+            BluetoothReading.Status expectedStatus
+    ) {
+        BluetoothPayloadParser.ParseResult result = BluetoothPayloadParser.parse(payload);
+
+        assertTrue(result.getErrorMessage(), result.isValid());
+        assertNotNull(result.getReading());
+        assertEquals(expectedPlate, result.getReading().getPlateNumber());
         assertEquals(expectedStatus, result.getReading().getStatus());
     }
 

@@ -68,6 +68,19 @@ public class WeightStationConnectionTest {
     }
 
     @Test
+    public void receivedPlatePayloadKeepsItsPlateNumber() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection();
+
+        transport.sendPayload("2,211.2,OK");
+
+        assertEquals(2, states.lastReading().getPlateNumber());
+        assertEquals(211.2f, states.lastReading().getWeightGrams(), 0.01f);
+        assertEquals(BluetoothReading.Status.OK, states.lastReading().getStatus());
+    }
+
+    @Test
     public void malformedPayloadIsReportedWithoutAReading() {
         connection.connect();
         transport.findStation();
