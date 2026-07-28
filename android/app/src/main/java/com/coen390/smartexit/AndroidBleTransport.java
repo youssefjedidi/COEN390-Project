@@ -41,6 +41,9 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
     private WeightStationConnection.ConnectionEvents connectionEvents;
     private UUID expectedServiceUuid;
     private UUID expectedCharacteristicUuid;
+    private UUID expectedCommandCharacteristicUuid;
+    private BluetoothGattCharacteristic commandCharacteristic;
+    private WeightStationConnection.CommandEvents commandEvents;
     private boolean connectionReady;
 
     AndroidBleTransport(Context context, BluetoothAdapter bluetoothAdapter) {
@@ -110,12 +113,14 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
             WeightStationConnection.DeviceCandidate device,
             UUID serviceUuid,
             UUID characteristicUuid,
+            UUID commandCharacteristicUuid,
             WeightStationConnection.ConnectionEvents events
     ) {
         disconnectGatt();
         connectionEvents = events;
         expectedServiceUuid = serviceUuid;
         expectedCharacteristicUuid = characteristicUuid;
+        expectedCommandCharacteristicUuid = commandCharacteristicUuid;
         connectionReady = false;
 
         try {
@@ -137,8 +142,34 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
 
     @Override
     @SuppressLint("MissingPermission")
+    public void writeCommand(
+            String command,
+            WeightStationConnection.CommandEvents events
+    ) {
+        BluetoothGatt gatt = bluetoothGatt;
+        BluetoothGattCharacteristic characteristic = commandCharacteristic;
+        if (!connectionReady || gatt == null || characteristic == null || commandEvents != null) {
+            events.onCommandWriteFailed();
+            return;
+        }
+
+        byte[] value = command.getBytes(StandardCharsets.UTF_8);
+        commandEvents = events;
+
+        try {
+            if (!startCharacteristicWrite(gatt, characteristic, value)) {
+                finishCommandWrite(false);
+            }
+        } catch (SecurityException | IllegalStateException exception) {
+            finishCommandWrite(false);
+        }
+    }
+
+    @Override
+    @SuppressLint("MissingPermission")
     public void disconnect() {
         connectionEvents = null;
+        commandEvents = null;
         disconnectGatt();
     }
 
@@ -183,6 +214,18 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
         @Override
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
             handleDescriptorWrite(gatt, descriptor, status);
+        }
+
+        @Override
+        public void onCharacteristicWrite(
+                BluetoothGatt gatt,
+                BluetoothGattCharacteristic characteristic,
+                int status
+        ) {
+            if (gatt == bluetoothGatt
+                    && expectedCommandCharacteristicUuid.equals(characteristic.getUuid())) {
+                finishCommandWrite(status == BluetoothGatt.GATT_SUCCESS);
+            }
         }
 
         @Override
@@ -259,7 +302,7 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
         connectionReady = true;
         WeightStationConnection.ConnectionEvents events = connectionEvents;
         if (events != null) {
-            events.onReady();
+            events.onReady(commandCharacteristic != null);
         }
     }
 
@@ -312,6 +355,13 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
             return;
         }
 
+        BluetoothGattCharacteristic candidate =
+                service.getCharacteristic(expectedCommandCharacteristicUuid);
+        if (candidate != null
+                && (candidate.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) != 0) {
+            commandCharacteristic = candidate;
+        }
+
         BluetoothGattDescriptor descriptor = characteristic.getDescriptor(CLIENT_CONFIGURATION_UUID);
         if (descriptor == null || !gatt.setCharacteristicNotification(characteristic, true)) {
             finishConnectionWithFailure(WeightStationConnection.Failure.NOTIFICATION_SETUP_FAILED);
@@ -320,6 +370,40 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
 
         if (!writeNotificationDescriptor(gatt, descriptor)) {
             finishConnectionWithFailure(WeightStationConnection.Failure.NOTIFICATION_SETUP_FAILED);
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    @SuppressLint("MissingPermission")
+    private boolean startCharacteristicWrite(
+            BluetoothGatt gatt,
+            BluetoothGattCharacteristic characteristic,
+            byte[] value
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return gatt.writeCharacteristic(
+                    characteristic,
+                    value,
+                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            ) == BluetoothStatusCodes.SUCCESS;
+        }
+
+        characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+        characteristic.setValue(value);
+        return gatt.writeCharacteristic(characteristic);
+    }
+
+    private void finishCommandWrite(boolean succeeded) {
+        WeightStationConnection.CommandEvents events = commandEvents;
+        commandEvents = null;
+        if (events == null) {
+            return;
+        }
+
+        if (succeeded) {
+            events.onCommandWritten();
+        } else {
+            events.onCommandWriteFailed();
         }
     }
 
@@ -366,6 +450,8 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
         BluetoothGatt gatt = bluetoothGatt;
         bluetoothGatt = null;
         connectionReady = false;
+        commandCharacteristic = null;
+        commandEvents = null;
 
         if (gatt == null) {
             return;
@@ -383,6 +469,8 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
             bluetoothGatt = null;
         }
         connectionReady = false;
+        commandCharacteristic = null;
+        commandEvents = null;
         safeCloseGatt(gatt);
     }
 
