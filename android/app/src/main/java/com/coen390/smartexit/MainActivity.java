@@ -12,13 +12,14 @@ import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
     private static final int BLUETOOTH_PERMISSION_REQUEST = 1001;
+    private static final int MAX_DASHBOARD_ITEMS = 4;
 
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("h:mm a", Locale.getDefault());
-    private final MockWeightSource mockWeightSource = new MockWeightSource();
 
     private TextView stationStatus;
     private TextView readingState;
@@ -27,7 +28,17 @@ public class MainActivity extends Activity {
     private TextView readingDetail;
     private TextView dataSourceLabel;
     private Button bluetoothActionButton;
+    private Button addItemButton;
+    private View dashboardEmptyState;
+    private View dashboardItemGrid;
+    private View dashboardGridSecondRow;
+    private TextView trackedItemCount;
+    private View[] itemRows;
+    private TextView[] itemNames;
+    private TextView[] itemStatuses;
+    private TextView[] itemDetails;
     private WeightDisplayState currentDisplayState;
+    private ItemProfileRepository itemProfileRepository;
     private StationConnectionManager connectionManager;
     private WeightStationConnection.Listener connectionListener;
 
@@ -44,13 +55,8 @@ public class MainActivity extends Activity {
         dataSourceLabel = findViewById(R.id.dataSourceLabel);
         bluetoothActionButton = findViewById(R.id.bluetoothActionButton);
 
-        Button simulateItemButton = findViewById(R.id.simulateItemButton);
-        Button clearTrayButton = findViewById(R.id.clearTrayButton);
-        Button simulateOfflineButton = findViewById(R.id.simulateOfflineButton);
-
-        simulateItemButton.setOnClickListener(view -> showMockReading(mockWeightSource.nextItemReading()));
-        clearTrayButton.setOnClickListener(view -> showMockReading(mockWeightSource.clearTrayReading()));
-        simulateOfflineButton.setOnClickListener(view -> showOfflineState());
+        itemProfileRepository = new ItemProfileRepository(this);
+        bindDashboardViews();
         bluetoothActionButton.setOnClickListener(view -> handleBluetoothAction());
 
         connectionManager = StationConnectionManager.getInstance(this);
@@ -77,9 +83,8 @@ public class MainActivity extends Activity {
         };
         connectionManager.addListener(connectionListener);
 
-        // Temporary entry points until dashboard navigation is connected.
-        Button manageItemsButton = findViewById(R.id.manageItemsButton);
-        manageItemsButton.setOnClickListener(
+        addItemButton = findViewById(R.id.addItemButton);
+        addItemButton.setOnClickListener(
                 view -> startActivity(AddEditItemActivity.newIntentForAdd(this))
         );
 
@@ -92,6 +97,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        showSavedItems();
         updateBluetoothReadiness();
     }
 
@@ -353,16 +359,133 @@ public class MainActivity extends Activity {
         return R.string.reading_detail_connection_failed;
     }
 
-    private void showMockReading(TrayReading reading) {
-        if (reading.status == TrayStatus.TRAY_CLEAR) {
-            renderState(WeightDisplayState.mockClear(currentTime()));
-        } else {
-            renderState(WeightDisplayState.mockItem(reading.sampleName, reading.weightGrams, currentTime()));
+    private void bindDashboardViews() {
+        dashboardEmptyState = findViewById(R.id.dashboardEmptyState);
+        dashboardItemGrid = findViewById(R.id.dashboardItemGrid);
+        dashboardGridSecondRow = findViewById(R.id.dashboardGridSecondRow);
+        trackedItemCount = findViewById(R.id.trackedItemCount);
+
+        itemRows = new View[] {
+                findViewById(R.id.itemRow1),
+                findViewById(R.id.itemRow2),
+                findViewById(R.id.itemRow3),
+                findViewById(R.id.itemRow4)
+        };
+        itemNames = new TextView[] {
+                findViewById(R.id.itemName1),
+                findViewById(R.id.itemName2),
+                findViewById(R.id.itemName3),
+                findViewById(R.id.itemName4)
+        };
+        itemStatuses = new TextView[] {
+                findViewById(R.id.itemStatus1),
+                findViewById(R.id.itemStatus2),
+                findViewById(R.id.itemStatus3),
+                findViewById(R.id.itemStatus4)
+        };
+        itemDetails = new TextView[] {
+                findViewById(R.id.itemDetail1),
+                findViewById(R.id.itemDetail2),
+                findViewById(R.id.itemDetail3),
+                findViewById(R.id.itemDetail4)
+        };
+    }
+
+    private void showSavedItems() {
+        List<ItemProfile> savedProfiles = itemProfileRepository.getAll();
+        int visibleCount = Math.min(savedProfiles.size(), MAX_DASHBOARD_ITEMS);
+        List<ItemProfile> visibleProfiles = savedProfiles.subList(0, visibleCount);
+
+        addItemButton.setVisibility(
+                visibleCount == MAX_DASHBOARD_ITEMS ? View.GONE : View.VISIBLE
+        );
+
+        ItemStateTracker tracker = new ItemStateTracker(
+                visibleProfiles,
+                MAX_DASHBOARD_ITEMS
+        );
+        renderDashboard(tracker.getStates());
+    }
+
+    private void renderDashboard(List<TrackedItemState> states) {
+        int visibleCount = Math.min(states.size(), MAX_DASHBOARD_ITEMS);
+        trackedItemCount.setText(
+                getString(
+                        R.string.tracked_item_count_format,
+                        visibleCount,
+                        MAX_DASHBOARD_ITEMS
+                )
+        );
+        dashboardEmptyState.setVisibility(visibleCount == 0 ? View.VISIBLE : View.GONE);
+        dashboardItemGrid.setVisibility(visibleCount == 0 ? View.GONE : View.VISIBLE);
+        dashboardGridSecondRow.setVisibility(
+                visibleCount > 2 ? View.VISIBLE : View.GONE
+        );
+
+        for (int index = 0; index < MAX_DASHBOARD_ITEMS; index++) {
+            if (index >= visibleCount) {
+                itemRows[index].setVisibility(View.INVISIBLE);
+                continue;
+            }
+
+            itemRows[index].setVisibility(View.VISIBLE);
+            renderDashboardItem(index, states.get(index));
         }
     }
 
-    private void showOfflineState() {
-        renderState(WeightDisplayState.offline(currentTime()));
+    private void renderDashboardItem(int index, TrackedItemState state) {
+        itemNames[index].setText(state.getItem().getName());
+        itemStatuses[index].setText(itemStatusText(state.getStatus()));
+        itemDetails[index].setText(itemDetailText(state));
+
+        if (state.getStatus() == TrackedItemStatus.PRESENT) {
+            styleItemStatus(
+                    itemStatuses[index],
+                    R.drawable.status_connected_background,
+                    R.color.status_connected_text
+            );
+        } else if (state.getStatus() == TrackedItemStatus.MISSING) {
+            styleItemStatus(
+                    itemStatuses[index],
+                    R.drawable.status_missing_background,
+                    R.color.status_missing_text
+            );
+        } else {
+            styleItemStatus(
+                    itemStatuses[index],
+                    R.drawable.status_waiting_background,
+                    R.color.status_waiting_text
+            );
+        }
+    }
+
+    private int itemStatusText(TrackedItemStatus status) {
+        if (status == TrackedItemStatus.PRESENT) {
+            return R.string.item_status_present;
+        }
+        if (status == TrackedItemStatus.MISSING) {
+            return R.string.item_status_missing;
+        }
+        return R.string.item_status_unknown;
+    }
+
+    private String itemDetailText(TrackedItemState state) {
+        if (state.getStatus() == TrackedItemStatus.PRESENT
+                && state.getPlateNumber() != null) {
+            return getString(R.string.item_detail_plate, state.getPlateNumber());
+        }
+        if (state.getStatus() == TrackedItemStatus.MISSING) {
+            return getString(R.string.item_detail_missing);
+        }
+        if (!state.getItem().isCalibrated()) {
+            return getString(R.string.item_detail_calibration_required);
+        }
+        return getString(R.string.item_detail_waiting);
+    }
+
+    private void styleItemStatus(TextView statusView, int background, int textColor) {
+        statusView.setBackgroundResource(background);
+        statusView.setTextColor(getColor(textColor));
     }
 
     private void showBluetoothReading(BluetoothReading reading) {
@@ -415,7 +538,7 @@ public class MainActivity extends Activity {
             return;
         }
 
-        stationStatus.setText(source == DataSource.LIVE ? R.string.station_live : R.string.station_mock);
+        stationStatus.setText(R.string.station_live);
         stationStatus.setBackgroundResource(R.drawable.status_connected_background);
         stationStatus.setTextColor(getColor(R.color.status_connected_text));
     }
@@ -424,10 +547,7 @@ public class MainActivity extends Activity {
         if (source == DataSource.LIVE) {
             return R.string.data_source_live;
         }
-        if (source == DataSource.OFFLINE) {
-            return R.string.data_source_offline;
-        }
-        return R.string.data_source_mock;
+        return R.string.data_source_offline;
     }
 
     private int readingStateText(TrayStatus status, DataSource source) {
@@ -453,7 +573,7 @@ public class MainActivity extends Activity {
         if (state.source == DataSource.LIVE) {
             return getString(R.string.reading_detail_live_item, state.itemLabel);
         }
-        return getString(R.string.reading_detail_item, state.itemLabel);
+        return getString(R.string.reading_detail_offline);
     }
 
     private String currentTime() {
@@ -461,7 +581,6 @@ public class MainActivity extends Activity {
     }
 
     private enum DataSource {
-        MOCK,
         LIVE,
         OFFLINE
     }
@@ -493,16 +612,8 @@ public class MainActivity extends Activity {
             this.displayTime = displayTime;
         }
 
-        static WeightDisplayState mockItem(String label, int weightGrams, String displayTime) {
-            return item(DataSource.MOCK, label, weightGrams, displayTime);
-        }
-
         static WeightDisplayState liveItem(String label, int weightGrams, String displayTime) {
             return item(DataSource.LIVE, label, weightGrams, displayTime);
-        }
-
-        static WeightDisplayState mockClear(String displayTime) {
-            return clear(DataSource.MOCK, displayTime);
         }
 
         static WeightDisplayState liveClear(String displayTime) {
@@ -519,46 +630,6 @@ public class MainActivity extends Activity {
 
         private static WeightDisplayState clear(DataSource source, String displayTime) {
             return new WeightDisplayState(source, TrayStatus.TRAY_CLEAR, 0, "", displayTime);
-        }
-    }
-
-    private static class TrayReading {
-        final TrayStatus status;
-        final int weightGrams;
-        final String sampleName;
-
-        private TrayReading(TrayStatus status, int weightGrams, String sampleName) {
-            this.status = status;
-            this.weightGrams = weightGrams;
-            this.sampleName = sampleName;
-        }
-
-        static TrayReading itemPresent(String sampleName, int weightGrams) {
-            return new TrayReading(TrayStatus.ITEM_PRESENT, weightGrams, sampleName);
-        }
-
-        static TrayReading trayClear() {
-            return new TrayReading(TrayStatus.TRAY_CLEAR, 0, "");
-        }
-    }
-
-    private static class MockWeightSource {
-        private final TrayReading[] sampleReadings = {
-                TrayReading.itemPresent("Wallet", 146),
-                TrayReading.itemPresent("Keys", 38),
-                TrayReading.itemPresent("Medication pouch", 82)
-        };
-
-        private int nextSampleIndex = 0;
-
-        TrayReading nextItemReading() {
-            TrayReading reading = sampleReadings[nextSampleIndex];
-            nextSampleIndex = (nextSampleIndex + 1) % sampleReadings.length;
-            return reading;
-        }
-
-        TrayReading clearTrayReading() {
-            return TrayReading.trayClear();
         }
     }
 }
