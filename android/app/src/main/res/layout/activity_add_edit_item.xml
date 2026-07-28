@@ -123,5 +123,17 @@
             android:textAllCaps="false"
             android:textColor="@color/button_secondary_text"
             android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/deleteButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/warning_button_background"
+            android:text="@string/delete_item"
+            android:textAllCaps="false"
+            android:textColor="@color/button_warning_text"
+            android:textSize="15sp"
+            android:visibility="gone" />
     </LinearLayout>
 </ScrollView>

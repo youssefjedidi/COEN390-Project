@@ -117,5 +117,9 @@
     <string name="action_disconnect">Disconnect</string>
     <string name="action_retry">Retry</string>
     <string name="action_cancel">Cancel</string>
+    <string name="delete_item">Delete item</string>
+    <string name="delete_item_confirm_title">Delete this item?</string>
+    <string name="delete_item_confirm_message">This can\'t be undone.</string>
+    <string name="delete">Delete</string>
     <string name="nav_dashboard">Dashboard</string>
 </resources>
