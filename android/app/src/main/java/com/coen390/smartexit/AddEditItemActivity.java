@@ -1,6 +1,7 @@
 package com.coen390.smartexit;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
@@ -53,12 +54,14 @@ public class AddEditItemActivity extends Activity {
         calibrationStatus = findViewById(R.id.calibrationStatus);
         Button saveButton = findViewById(R.id.saveButton);
         Button cancelButton = findViewById(R.id.cancelButton);
+        Button deleteButton = findViewById(R.id.deleteButton);
 
         editingItemId = getIntent().getStringExtra(EXTRA_ITEM_ID);
         loadExistingItemIfEditing();
 
         saveButton.setOnClickListener(v -> onSaveClicked());
         cancelButton.setOnClickListener(v -> finish());
+        deleteButton.setOnClickListener(v -> confirmDelete());
     }
 
     private void loadExistingItemIfEditing() {
@@ -85,6 +88,19 @@ public class AddEditItemActivity extends Activity {
         screenTitle.setText(getString(R.string.edit_item_title));
         itemNameInput.setText(editingProfile.getName());
         updateCalibrationStatusText(editingProfile);
+        findViewById(R.id.deleteButton).setVisibility(android.view.View.VISIBLE);
+    }
+
+    private void confirmDelete() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.delete_item_confirm_title)
+                .setMessage(R.string.delete_item_confirm_message)
+                .setPositiveButton(R.string.delete, (dialog, which) -> {
+                    repository.delete(editingProfile.getId());
+                    finish();
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
     }
 
     private void updateCalibrationStatusText(ItemProfile profile) {
