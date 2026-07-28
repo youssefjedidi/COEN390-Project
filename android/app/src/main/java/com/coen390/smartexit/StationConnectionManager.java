@@ -6,6 +6,7 @@ import android.content.Context;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 final class StationConnectionManager implements WeightStationConnection.Listener {
 
@@ -20,10 +21,17 @@ final class StationConnectionManager implements WeightStationConnection.Listener
 
     private final Context appContext;
     private final List<WeightStationConnection.Listener> listeners = new ArrayList<>();
+    private final DisconnectEventCoordinator disconnectEventCoordinator =
+            new DisconnectEventCoordinator();
+    private final DisconnectSnapshotRepository disconnectSnapshotRepository;
+    private final DisconnectNotifier disconnectNotifier;
     private WeightStationConnection connection;
+    private DisconnectSnapshot latestDashboardSnapshot;
 
     private StationConnectionManager(Context appContext) {
         this.appContext = appContext;
+        disconnectSnapshotRepository = new DisconnectSnapshotRepository(appContext);
+        disconnectNotifier = new DisconnectNotifier(appContext);
     }
 
     /**
@@ -67,9 +75,21 @@ final class StationConnectionManager implements WeightStationConnection.Listener
     /** Fully tears down the connection, e.g. when permissions/BLE support are lost. */
     void reset() {
         if (connection != null) {
+            saveDisconnectSnapshot(WeightStationConnection.State.DISCONNECTED);
             connection.close();
             connection = null;
         }
+    }
+
+    synchronized void recordDashboardStates(
+            List<TrackedItemState> states,
+            long timestampMillis
+    ) {
+        latestDashboardSnapshot = DisconnectSnapshot.from(timestampMillis, states);
+    }
+
+    synchronized DisconnectSnapshot getLatestDashboardSnapshot() {
+        return latestDashboardSnapshot;
     }
 
     void addListener(WeightStationConnection.Listener listener) {
@@ -88,6 +108,7 @@ final class StationConnectionManager implements WeightStationConnection.Listener
 
     @Override
     public void onStateChanged(WeightStationConnection.State state, WeightStationConnection.Failure failure) {
+        saveDisconnectSnapshot(state);
         for (WeightStationConnection.Listener listener : new ArrayList<>(listeners)) {
             listener.onStateChanged(state, failure);
         }
@@ -104,6 +125,24 @@ final class StationConnectionManager implements WeightStationConnection.Listener
     public void onInvalidPayload() {
         for (WeightStationConnection.Listener listener : new ArrayList<>(listeners)) {
             listener.onInvalidPayload();
+        }
+    }
+
+    private void saveDisconnectSnapshot(WeightStationConnection.State state) {
+        Optional<DisconnectSnapshot> snapshot;
+        synchronized (this) {
+            snapshot = disconnectEventCoordinator.onStateChanged(
+                    state,
+                    latestDashboardSnapshot
+            );
+            if (snapshot.isPresent()) {
+                latestDashboardSnapshot = null;
+            }
+        }
+
+        if (snapshot.isPresent()) {
+            disconnectSnapshotRepository.save(snapshot.get());
+            disconnectNotifier.show(snapshot.get());
         }
     }
 }

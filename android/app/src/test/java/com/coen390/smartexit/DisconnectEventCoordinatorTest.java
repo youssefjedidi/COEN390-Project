@@ -4,7 +4,6 @@ import org.junit.Test;
 
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
 import java.util.Optional;
 
 import static org.junit.Assert.assertEquals;
@@ -19,29 +18,29 @@ public class DisconnectEventCoordinatorTest {
     @Test
     public void createsOneSnapshotWhenAConnectedStationDisconnects() {
         DisconnectEventCoordinator coordinator = new DisconnectEventCoordinator();
-        List<TrackedItemState> states = Arrays.asList(
-                TrackedItemState.present(keys, 2),
-                TrackedItemState.missing(wallet)
+        DisconnectSnapshot latestSnapshot = DisconnectSnapshot.from(
+                150L,
+                Arrays.asList(
+                        TrackedItemState.present(keys, 2),
+                        TrackedItemState.missing(wallet)
+                )
         );
 
         coordinator.onStateChanged(
                 WeightStationConnection.State.CONNECTED,
-                null,
-                100L
+                null
         );
         Optional<DisconnectSnapshot> firstDisconnect = coordinator.onStateChanged(
                 WeightStationConnection.State.DISCONNECTED,
-                states,
-                200L
+                latestSnapshot
         );
         Optional<DisconnectSnapshot> repeatedDisconnect = coordinator.onStateChanged(
                 WeightStationConnection.State.DISCONNECTED,
-                states,
-                300L
+                latestSnapshot
         );
 
         assertTrue(firstDisconnect.isPresent());
-        assertEquals(200L, firstDisconnect.get().getTimestampMillis());
+        assertEquals(150L, firstDisconnect.get().getTimestampMillis());
         assertEquals(Collections.singletonList("Keys"), firstDisconnect.get().getPresentItemNames());
         assertFalse(repeatedDisconnect.isPresent());
     }
@@ -53,18 +52,16 @@ public class DisconnectEventCoordinatorTest {
         assertFalse(
                 coordinator.onStateChanged(
                         WeightStationConnection.State.DISCONNECTED,
-                        Collections.emptyList(),
-                        100L
+                        DisconnectSnapshot.from(100L, Collections.emptyList())
                 ).isPresent()
         );
 
-        coordinator.onStateChanged(WeightStationConnection.State.CONNECTED, null, 200L);
+        coordinator.onStateChanged(WeightStationConnection.State.CONNECTED, null);
 
         assertFalse(
                 coordinator.onStateChanged(
                         WeightStationConnection.State.DISCONNECTED,
-                        null,
-                        300L
+                        null
                 ).isPresent()
         );
     }
@@ -72,24 +69,24 @@ public class DisconnectEventCoordinatorTest {
     @Test
     public void reconnectingArmsTheNextDisconnect() {
         DisconnectEventCoordinator coordinator = new DisconnectEventCoordinator();
-        List<TrackedItemState> states =
-                Collections.singletonList(TrackedItemState.present(keys, 1));
+        DisconnectSnapshot latestSnapshot = DisconnectSnapshot.from(
+                100L,
+                Collections.singletonList(TrackedItemState.present(keys, 1))
+        );
 
-        coordinator.onStateChanged(WeightStationConnection.State.CONNECTED, null, 100L);
+        coordinator.onStateChanged(WeightStationConnection.State.CONNECTED, null);
         assertTrue(
                 coordinator.onStateChanged(
                         WeightStationConnection.State.DISCONNECTED,
-                        states,
-                        200L
+                        latestSnapshot
                 ).isPresent()
         );
 
-        coordinator.onStateChanged(WeightStationConnection.State.CONNECTED, null, 300L);
+        coordinator.onStateChanged(WeightStationConnection.State.CONNECTED, null);
         assertTrue(
                 coordinator.onStateChanged(
                         WeightStationConnection.State.DISCONNECTED,
-                        states,
-                        400L
+                        latestSnapshot
                 ).isPresent()
         );
     }
@@ -97,14 +94,15 @@ public class DisconnectEventCoordinatorTest {
     @Test
     public void keepsTheSnapshotWhenNoItemsArePresent() {
         DisconnectEventCoordinator coordinator = new DisconnectEventCoordinator();
-        List<TrackedItemState> states =
-                Collections.singletonList(TrackedItemState.missing(keys));
+        DisconnectSnapshot latestSnapshot = DisconnectSnapshot.from(
+                100L,
+                Collections.singletonList(TrackedItemState.missing(keys))
+        );
 
-        coordinator.onStateChanged(WeightStationConnection.State.CONNECTED, null, 100L);
+        coordinator.onStateChanged(WeightStationConnection.State.CONNECTED, null);
         DisconnectSnapshot snapshot = coordinator.onStateChanged(
                 WeightStationConnection.State.DISCONNECTED,
-                states,
-                200L
+                latestSnapshot
         ).get();
 
         assertTrue(snapshot.getPresentItemNames().isEmpty());
