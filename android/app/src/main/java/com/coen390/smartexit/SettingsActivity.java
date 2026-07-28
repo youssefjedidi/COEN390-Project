@@ -46,6 +46,12 @@ public class SettingsActivity extends Activity implements WeightStationConnectio
         connectionFailureReason = findViewById(R.id.connectionFailureReason);
         connectionProgress = findViewById(R.id.connectionProgress);
         connectionActionButton = findViewById(R.id.connectionActionButton);
+
+        Button navDashboardButton = findViewById(R.id.navDashboardButton);
+        navDashboardButton.setOnClickListener(v -> finish());
+
+        Button navSettingsButton = findViewById(R.id.navSettingsButton);
+        navSettingsButton.setEnabled(false);
     }
 
     @Override

@@ -40,6 +40,7 @@ public class MainActivity extends Activity {
     private TextView[] itemNames;
     private TextView[] itemStatuses;
     private TextView[] itemDetails;
+    private String[] currentItemIds = new String[MAX_DASHBOARD_ITEMS];
     private WeightDisplayState currentDisplayState;
     private DashboardStateCoordinator dashboardStateCoordinator;
     private ItemProfileRepository itemProfileRepository;
@@ -92,8 +93,11 @@ public class MainActivity extends Activity {
                 view -> startActivity(AddEditItemActivity.newIntentForAdd(this))
         );
 
-        Button openSettingsButton = findViewById(R.id.openSettingsButton);
-        openSettingsButton.setOnClickListener(
+        Button navDashboardButton = findViewById(R.id.navDashboardButton);
+        navDashboardButton.setEnabled(false);
+
+        Button navSettingsButton = findViewById(R.id.navSettingsButton);
+        navSettingsButton.setOnClickListener(
                 view -> startActivity(new Intent(this, SettingsActivity.class))
         );
     }
@@ -393,6 +397,10 @@ public class MainActivity extends Activity {
                 findViewById(R.id.itemDetail3),
                 findViewById(R.id.itemDetail4)
         };
+        for (int i = 0; i < MAX_DASHBOARD_ITEMS; i++) {
+            int index = i;
+            itemRows[index].setOnClickListener(v -> openItemDetails(index));
+        }
     }
 
     private void showSavedItems() {
@@ -432,6 +440,7 @@ public class MainActivity extends Activity {
         for (int index = 0; index < MAX_DASHBOARD_ITEMS; index++) {
             if (index >= visibleCount) {
                 itemRows[index].setVisibility(View.INVISIBLE);
+                currentItemIds[index] = null;
                 continue;
             }
 
@@ -439,8 +448,14 @@ public class MainActivity extends Activity {
             renderDashboardItem(index, states.get(index));
         }
     }
-
+    private void openItemDetails(int index) {
+        String itemId = currentItemIds[index];
+        if (itemId != null) {
+            startActivity(AddEditItemActivity.newIntentForEdit(this, itemId));
+        }
+    }
     private void renderDashboardItem(int index, TrackedItemState state) {
+        currentItemIds[index] = state.getItem().getId();
         itemNames[index].setText(state.getItem().getName());
         itemStatuses[index].setText(itemStatusText(state.getStatus()));
         itemDetails[index].setText(itemDetailText(state));
