@@ -51,6 +51,13 @@ public class MainActivity extends Activity {
         clearTrayButton.setOnClickListener(view -> showMockReading(mockWeightSource.clearTrayReading()));
         simulateOfflineButton.setOnClickListener(view -> showOfflineState());
         bluetoothActionButton.setOnClickListener(view -> handleBluetoothAction());
+
+        // TEMPORARY: manual entry point for testing UI-4.2 in isolation.
+        // Remove once UI-2.5 wires real navigation from the dashboard.
+        Button manageItemsButton = findViewById(R.id.manageItemsButton);
+        manageItemsButton.setOnClickListener(
+                view -> startActivity(AddEditItemActivity.newIntentForAdd(this))
+        );
     }
 
     @Override

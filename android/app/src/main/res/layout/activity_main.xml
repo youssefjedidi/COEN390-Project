@@ -140,5 +140,15 @@
             android:textAllCaps="false"
             android:textColor="@color/button_warning_text"
             android:textSize="15sp" />
+        <Button
+            android:id="@+id/manageItemsButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/secondary_button_background"
+            android:text="@string/manage_items_temp"
+            android:textAllCaps="false"
+            android:textColor="@color/button_secondary_text"
+            android:textSize="15sp" />
     </LinearLayout>
 </ScrollView>

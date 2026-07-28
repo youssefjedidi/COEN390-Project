@@ -61,4 +61,16 @@
     <string name="data_source_mock">Data source: mock Android reading</string>
     <string name="data_source_live">Data source: live station reading</string>
     <string name="data_source_offline">Data source: last known reading</string>
+    <string name="add_item_title">Add Item</string>
+    <string name="edit_item_title">Edit Item</string>
+    <string name="item_name_label">Item name</string>
+    <string name="item_name_hint">e.g. Water Bottle</string>
+    <string name="calibration_label">Calibration</string>
+    <string name="calibration_status_uncalibrated">Not calibrated yet</string>
+    <string name="calibration_status_format">Calibrated range: %1$.0f\u2013%2$.0f g</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="item_name_required">Please enter a name for this item</string>
+    <string name="item_not_found">This item no longer exists</string>
+    <string name="manage_items_temp">[Temp] Add Item (for testing UI-4.2)</string>
 </resources>
