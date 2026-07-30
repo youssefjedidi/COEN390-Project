@@ -5,8 +5,6 @@
 #include <BLEUtils.h>
 #include <HX711.h>
 
-#include "tare_command.h"
-
 constexpr int PLATE_COUNT = 4;
 constexpr int SAMPLE_COUNT = 5;
 
@@ -69,7 +67,7 @@ class StationServerCallbacks : public BLEServerCallbacks {
 class StationCommandCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *characteristic) override {
     std::string command = characteristic->getValue();
-    if (!isTareCommand(command)) {
+    if (command != "TARE") {
       characteristic->setValue("UNKNOWN_COMMAND");
       Serial.print("Ignored BLE command: ");
       Serial.println(command.c_str());
