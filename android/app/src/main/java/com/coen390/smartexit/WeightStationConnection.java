@@ -6,6 +6,8 @@ final class WeightStationConnection {
     static final String DEVICE_NAME = "SmartExit-Station";
     static final UUID SERVICE_UUID = UUID.fromString("05442887-a14c-4c36-906c-0fe1af039f9f");
     static final UUID WEIGHT_CHARACTERISTIC_UUID = UUID.fromString("e3abbc63-b985-4c8e-8e38-d423ce320106");
+    static final UUID COMMAND_CHARACTERISTIC_UUID =
+            UUID.fromString("e3abbc63-b985-4c8e-8e38-d423ce320107");
 
     enum State {
         IDLE,
@@ -26,6 +28,12 @@ final class WeightStationConnection {
         NOTIFICATION_SETUP_FAILED
     }
 
+    enum CommandFailure {
+        NOT_CONNECTED,
+        NOT_SUPPORTED,
+        WRITE_FAILED
+    }
+
     interface Listener {
         void onStateChanged(State state, Failure failure);
 
@@ -43,8 +51,11 @@ final class WeightStationConnection {
                 DeviceCandidate device,
                 UUID serviceUuid,
                 UUID characteristicUuid,
+                UUID commandCharacteristicUuid,
                 ConnectionEvents events
         );
+
+        void writeCommand(String command, CommandEvents events);
 
         void disconnect();
     }
@@ -56,13 +67,25 @@ final class WeightStationConnection {
     }
 
     interface ConnectionEvents {
-        void onReady();
+        void onReady(boolean commandSupported);
 
         void onPayloadReceived(String payload);
 
         void onDisconnected();
 
         void onConnectionFailed(Failure failure);
+    }
+
+    interface CommandEvents {
+        void onCommandWritten();
+
+        void onCommandWriteFailed();
+    }
+
+    interface CommandCallback {
+        void onCommandSent();
+
+        void onCommandFailed(CommandFailure failure);
     }
 
     static final class DeviceCandidate {
@@ -79,6 +102,7 @@ final class WeightStationConnection {
     private final Listener listener;
     private State state = State.IDLE;
     private Failure failure;
+    private boolean commandSupported;
 
     WeightStationConnection(Transport transport, Listener listener) {
         this.transport = transport;
@@ -91,6 +115,10 @@ final class WeightStationConnection {
 
     Failure getFailure() {
         return failure;
+    }
+
+    boolean canRequestTare() {
+        return state == State.CONNECTED && commandSupported;
     }
 
     void connect() {
@@ -115,7 +143,31 @@ final class WeightStationConnection {
     void disconnect() {
         transport.stopScan();
         transport.disconnect();
+        commandSupported = false;
         changeState(State.DISCONNECTED, null);
+    }
+
+    void requestTare(CommandCallback callback) {
+        if (state != State.CONNECTED) {
+            callback.onCommandFailed(CommandFailure.NOT_CONNECTED);
+            return;
+        }
+        if (!commandSupported) {
+            callback.onCommandFailed(CommandFailure.NOT_SUPPORTED);
+            return;
+        }
+
+        transport.writeCommand("TARE", new CommandEvents() {
+            @Override
+            public void onCommandWritten() {
+                callback.onCommandSent();
+            }
+
+            @Override
+            public void onCommandWriteFailed() {
+                callback.onCommandFailed(CommandFailure.WRITE_FAILED);
+            }
+        });
     }
 
     void close() {
@@ -123,6 +175,7 @@ final class WeightStationConnection {
         transport.disconnect();
         state = State.IDLE;
         failure = null;
+        commandSupported = false;
     }
 
     private void handleDeviceFound(DeviceCandidate device) {
@@ -136,9 +189,11 @@ final class WeightStationConnection {
                 device,
                 SERVICE_UUID,
                 WEIGHT_CHARACTERISTIC_UUID,
+                COMMAND_CHARACTERISTIC_UUID,
                 new ConnectionEvents() {
                     @Override
-                    public void onReady() {
+                    public void onReady(boolean commandSupported) {
+                        WeightStationConnection.this.commandSupported = commandSupported;
                         changeState(State.CONNECTED, null);
                     }
 
@@ -176,6 +231,7 @@ final class WeightStationConnection {
     private void handleFailure(Failure failure) {
         transport.stopScan();
         transport.disconnect();
+        commandSupported = false;
         changeState(State.FAILED, failure);
     }
 

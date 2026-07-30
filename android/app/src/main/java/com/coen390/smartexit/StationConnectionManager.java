@@ -72,6 +72,18 @@ final class StationConnectionManager implements WeightStationConnection.Listener
         }
     }
 
+    boolean canRequestTare() {
+        return connection != null && connection.canRequestTare();
+    }
+
+    void requestTare(WeightStationConnection.CommandCallback callback) {
+        if (connection == null) {
+            callback.onCommandFailed(WeightStationConnection.CommandFailure.NOT_CONNECTED);
+            return;
+        }
+        connection.requestTare(callback);
+    }
+
     /** Fully tears down the connection, e.g. when permissions/BLE support are lost. */
     void reset() {
         if (connection != null) {

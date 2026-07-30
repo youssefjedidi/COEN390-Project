@@ -1,7 +1,9 @@
 package com.coen390.smartexit;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -41,6 +43,10 @@ public class WeightStationConnectionTest {
                 WeightStationConnection.WEIGHT_CHARACTERISTIC_UUID,
                 transport.connectedCharacteristicUuid
         );
+        assertEquals(
+                WeightStationConnection.COMMAND_CHARACTERISTIC_UUID,
+                transport.connectedCommandCharacteristicUuid
+        );
         assertEquals(WeightStationConnection.State.CONNECTING, states.lastState());
     }
 
@@ -48,17 +54,72 @@ public class WeightStationConnectionTest {
     public void readyGattConnectionReportsConnected() {
         connection.connect();
         transport.findStation();
-        transport.finishConnection();
+        transport.finishConnection(false);
 
         assertEquals(WeightStationConnection.State.CONNECTED, states.lastState());
         assertNull(states.lastFailure());
+        assertFalse(connection.canRequestTare());
+    }
+
+    @Test
+    public void tareIsAvailableWhenFirmwareExposesCommandCharacteristic() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection(true);
+
+        assertTrue(connection.canRequestTare());
+    }
+
+    @Test
+    public void tareRequestWritesCommandThroughTransport() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection(true);
+
+        CommandRecorder command = new CommandRecorder();
+        connection.requestTare(command);
+        transport.finishCommand();
+
+        assertEquals("TARE", transport.lastCommand);
+        assertTrue(command.succeeded);
+        assertNull(command.failure);
+    }
+
+    @Test
+    public void tareRequestExplainsWhenFirmwareDoesNotSupportIt() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection(false);
+
+        CommandRecorder command = new CommandRecorder();
+        connection.requestTare(command);
+
+        assertFalse(command.succeeded);
+        assertEquals(
+                WeightStationConnection.CommandFailure.NOT_SUPPORTED,
+                command.failure
+        );
+    }
+
+    @Test
+    public void failedTareWriteIsReportedToCaller() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection(true);
+
+        CommandRecorder command = new CommandRecorder();
+        connection.requestTare(command);
+        transport.failCommand();
+
+        assertFalse(command.succeeded);
+        assertEquals(WeightStationConnection.CommandFailure.WRITE_FAILED, command.failure);
     }
 
     @Test
     public void receivedPayloadReachesListenerAsWeightReading() {
         connection.connect();
         transport.findStation();
-        transport.finishConnection();
+        transport.finishConnection(false);
 
         transport.sendPayload("211.2,OK,1149");
 
@@ -71,7 +132,7 @@ public class WeightStationConnectionTest {
     public void receivedPlatePayloadKeepsItsPlateNumber() {
         connection.connect();
         transport.findStation();
-        transport.finishConnection();
+        transport.finishConnection(false);
 
         transport.sendPayload("2,211.2,OK");
 
@@ -84,7 +145,7 @@ public class WeightStationConnectionTest {
     public void malformedPayloadIsReportedWithoutAReading() {
         connection.connect();
         transport.findStation();
-        transport.finishConnection();
+        transport.finishConnection(false);
 
         transport.sendPayload("not-a-weight");
 
@@ -117,7 +178,7 @@ public class WeightStationConnectionTest {
     public void unexpectedDisconnectIsVisible() {
         connection.connect();
         transport.findStation();
-        transport.finishConnection();
+        transport.finishConnection(false);
         transport.dropConnection();
 
         assertEquals(WeightStationConnection.State.DISCONNECTED, states.lastState());
@@ -171,12 +232,31 @@ public class WeightStationConnectionTest {
         }
     }
 
+    private static final class CommandRecorder
+            implements WeightStationConnection.CommandCallback {
+        boolean succeeded;
+        WeightStationConnection.CommandFailure failure;
+
+        @Override
+        public void onCommandSent() {
+            succeeded = true;
+        }
+
+        @Override
+        public void onCommandFailed(WeightStationConnection.CommandFailure failure) {
+            this.failure = failure;
+        }
+    }
+
     private static final class FakeTransport implements WeightStationConnection.Transport {
         UUID scannedServiceUuid;
         UUID connectedServiceUuid;
         UUID connectedCharacteristicUuid;
+        UUID connectedCommandCharacteristicUuid;
         WeightStationConnection.ScanEvents scanEvents;
         WeightStationConnection.ConnectionEvents connectionEvents;
+        WeightStationConnection.CommandEvents commandEvents;
+        String lastCommand;
         int stopScanCount;
         int disconnectCount;
 
@@ -196,11 +276,22 @@ public class WeightStationConnectionTest {
                 WeightStationConnection.DeviceCandidate device,
                 UUID serviceUuid,
                 UUID characteristicUuid,
+                UUID commandCharacteristicUuid,
                 WeightStationConnection.ConnectionEvents events
         ) {
             connectedServiceUuid = serviceUuid;
             connectedCharacteristicUuid = characteristicUuid;
+            connectedCommandCharacteristicUuid = commandCharacteristicUuid;
             connectionEvents = events;
+        }
+
+        @Override
+        public void writeCommand(
+                String command,
+                WeightStationConnection.CommandEvents events
+        ) {
+            lastCommand = command;
+            commandEvents = events;
         }
 
         @Override
@@ -221,8 +312,16 @@ public class WeightStationConnectionTest {
             scanEvents.onScanFailed(failure);
         }
 
-        void finishConnection() {
-            connectionEvents.onReady();
+        void finishConnection(boolean commandSupported) {
+            connectionEvents.onReady(commandSupported);
+        }
+
+        void finishCommand() {
+            commandEvents.onCommandWritten();
+        }
+
+        void failCommand() {
+            commandEvents.onCommandWriteFailed();
         }
 
         void sendPayload(String payload) {
