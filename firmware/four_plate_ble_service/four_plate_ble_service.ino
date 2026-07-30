@@ -78,7 +78,7 @@ class StationServerCallbacks : public BLEServerCallbacks {
 
 class StationCommandCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *characteristic) override {
-    std::string command = characteristic->getValue();
+    auto command = characteristic->getValue();
     if (command != "TARE") {
       characteristic->setValue("UNKNOWN_COMMAND");
       Serial.print("Ignored BLE command: ");
