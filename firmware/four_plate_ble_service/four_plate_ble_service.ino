@@ -27,13 +27,17 @@ constexpr char DEVICE_NAME[] = "SmartExit-Station";
 constexpr char SERVICE_UUID[] = "05442887-a14c-4c36-906c-0fe1af039f9f";
 constexpr char WEIGHT_CHARACTERISTIC_UUID[] =
     "e3abbc63-b985-4c8e-8e38-d423ce320106";
+constexpr char COMMAND_CHARACTERISTIC_UUID[] =
+    "e3abbc63-b985-4c8e-8e38-d423ce320107";
 
 HX711 scales[PLATE_COUNT];
 bool scaleAvailable[PLATE_COUNT] = {};
 
 BLEServer *bleServer = nullptr;
 BLECharacteristic *weightCharacteristic = nullptr;
+BLECharacteristic *commandCharacteristic = nullptr;
 volatile bool deviceConnected = false;
+volatile bool tareRequested = false;
 bool previousConnectionState = false;
 
 enum class WeightStatus {
@@ -57,6 +61,22 @@ class StationServerCallbacks : public BLEServerCallbacks {
   void onDisconnect(BLEServer *) override {
     deviceConnected = false;
     Serial.println("BLE client disconnected.");
+  }
+};
+
+class StationCommandCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *characteristic) override {
+    std::string command = characteristic->getValue();
+    if (command != "TARE") {
+      characteristic->setValue("UNKNOWN_COMMAND");
+      Serial.print("Ignored BLE command: ");
+      Serial.println(command.c_str());
+      return;
+    }
+
+    tareRequested = true;
+    characteristic->setValue("TARE_QUEUED");
+    Serial.println("BLE tare request queued.");
   }
 };
 
@@ -86,6 +106,13 @@ void startBluetoothService() {
       BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
   weightCharacteristic->addDescriptor(new BLE2902());
   weightCharacteristic->setValue("1,0.0,ERROR");
+
+  commandCharacteristic = service->createCharacteristic(
+      COMMAND_CHARACTERISTIC_UUID,
+      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+  commandCharacteristic->setCallbacks(new StationCommandCallbacks());
+  commandCharacteristic->setValue("READY");
+
   service->start();
 
   BLEAdvertising *advertising = BLEDevice::getAdvertising();
@@ -110,21 +137,21 @@ bool tareScale(int index, int sampleCount = 20) {
   return true;
 }
 
-void tareAllScales() {
+bool tareAllScales() {
   Serial.println("Taring all available plates...");
+  bool allSucceeded = true;
 
   for (int index = 0; index < PLATE_COUNT; index++) {
-    if (!scaleAvailable[index]) {
-      continue;
-    }
-
     bool tareSucceeded = tareScale(index);
     scaleAvailable[index] = tareSucceeded;
+    allSucceeded = allSucceeded && tareSucceeded;
 
     Serial.print("Plate ");
     Serial.print(index + 1);
     Serial.println(tareSucceeded ? " tare complete." : " tare failed.");
   }
+
+  return allSucceeded;
 }
 
 void startScales() {
@@ -239,6 +266,20 @@ void handleSerialCommand() {
   }
 }
 
+void handleTareRequest() {
+  if (!tareRequested) {
+    return;
+  }
+
+  tareRequested = false;
+  commandCharacteristic->setValue("TARE_RUNNING");
+
+  bool tareSucceeded = tareAllScales();
+  commandCharacteristic->setValue(tareSucceeded ? "TARE_OK" : "TARE_FAILED");
+  Serial.println(tareSucceeded ? "BLE tare request complete."
+                               : "BLE tare request failed.");
+}
+
 void restartAdvertisingAfterDisconnect() {
   if (!deviceConnected && previousConnectionState) {
     delay(500);
@@ -264,6 +305,7 @@ void setup() {
 
 void loop() {
   handleSerialCommand();
+  handleTareRequest();
   restartAdvertisingAfterDisconnect();
 
   static unsigned long lastPublish = 0;

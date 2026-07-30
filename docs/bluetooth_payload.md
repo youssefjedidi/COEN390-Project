@@ -51,3 +51,28 @@ For example:
 `plate_number` is an integer from 1 to 4. Weight and status use the same rules
 as the single-plate payload. The Android parser accepts both formats so the
 single-plate prototype remains usable while the four-plate hardware is tested.
+
+## Station commands
+
+The four-plate station also exposes a writable command characteristic:
+
+```text
+e3abbc63-b985-4c8e-8e38-d423ce320107
+```
+
+Android writes the UTF-8 text `TARE` to this characteristic when the user
+requests a zero operation. The command is accepted only in that exact form.
+The station queues the request, tares all four plates in its main loop, and
+stores one of these values on the command characteristic:
+
+| Value | Meaning |
+| --- | --- |
+| `READY` | No command has been requested since startup. |
+| `TARE_QUEUED` | The request was accepted and is waiting to run. |
+| `TARE_RUNNING` | The station is sampling the empty plates. |
+| `TARE_OK` | All four plates were tared successfully. |
+| `TARE_FAILED` | At least one HX711 did not respond. |
+| `UNKNOWN_COMMAND` | The written text was not supported. |
+
+The plates must be empty before `TARE` is sent. A tare changes the zero offset;
+it does not change any calibration factor.
