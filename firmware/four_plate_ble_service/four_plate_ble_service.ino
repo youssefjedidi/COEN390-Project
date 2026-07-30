@@ -1,15 +1,18 @@
 #include <Arduino.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 #include <BLE2902.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <HX711.h>
+#include <Wire.h>
 
 constexpr int PLATE_COUNT = 4;
 constexpr int SAMPLE_COUNT = 5;
 
-const int DOUT_PINS[PLATE_COUNT] = {16, 18, 21, 19};
-const int SCK_PINS[PLATE_COUNT] = {4, 17, 22, 23};
+const int DOUT_PINS[PLATE_COUNT] = {34, 18, 35, 19};
+const int SCK_PINS[PLATE_COUNT] = {32, 17, 33, 23};
 const float CALIBRATION_FACTORS[PLATE_COUNT] = {
     2170.77f,
     923.52f,
@@ -23,6 +26,13 @@ constexpr float MAX_WEIGHT_GRAMS = 1000.0f;
 constexpr unsigned long PUBLISH_INTERVAL_MS = 500;
 constexpr size_t PAYLOAD_SIZE = 24;
 
+constexpr int SCREEN_WIDTH = 128;
+constexpr int SCREEN_HEIGHT = 64;
+constexpr int OLED_SDA_PIN = 21;
+constexpr int OLED_SCL_PIN = 22;
+constexpr int OLED_RESET_PIN = -1;
+constexpr uint8_t OLED_ADDRESS = 0x3C;
+
 constexpr char DEVICE_NAME[] = "SmartExit-Station";
 constexpr char SERVICE_UUID[] = "05442887-a14c-4c36-906c-0fe1af039f9f";
 constexpr char WEIGHT_CHARACTERISTIC_UUID[] =
@@ -32,6 +42,8 @@ constexpr char COMMAND_CHARACTERISTIC_UUID[] =
 
 HX711 scales[PLATE_COUNT];
 bool scaleAvailable[PLATE_COUNT] = {};
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET_PIN);
+bool displayAvailable = false;
 
 BLEServer *bleServer = nullptr;
 BLECharacteristic *weightCharacteristic = nullptr;
@@ -92,6 +104,76 @@ const char *statusText(WeightStatus status) {
       return "ERROR";
   }
   return "ERROR";
+}
+
+void showDisplayMessage(const char *message) {
+  if (!displayAvailable) {
+    return;
+  }
+
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setTextWrap(false);
+  display.setCursor(0, 2);
+  display.println("Smart Exit Station");
+  display.drawLine(0, 15, SCREEN_WIDTH - 1, 15, SSD1306_WHITE);
+  display.setCursor(0, 25);
+  display.println(message);
+  display.display();
+}
+
+void startDisplay() {
+  Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
+  displayAvailable = display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS);
+
+  if (displayAvailable) {
+    Serial.println("OLED ready.");
+    showDisplayMessage("Starting...");
+  } else {
+    Serial.println("OLED not detected. Continuing without display.");
+  }
+}
+
+void updateDisplay(const PlateReading readings[PLATE_COUNT]) {
+  if (!displayAvailable) {
+    return;
+  }
+
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setTextWrap(false);
+  display.setCursor(0, 2);
+  display.print("BLE: ");
+  display.println(deviceConnected ? "CONNECTED" : "OFFLINE");
+  display.drawLine(0, 15, SCREEN_WIDTH - 1, 15, SSD1306_WHITE);
+
+  constexpr int ROW_Y[PLATE_COUNT] = {18, 29, 40, 51};
+  for (int index = 0; index < PLATE_COUNT; index++) {
+    display.setCursor(0, ROW_Y[index]);
+    display.print("P");
+    display.print(index + 1);
+    display.print(": ");
+
+    switch (readings[index].status) {
+      case WeightStatus::Ok:
+        display.print(readings[index].grams, 0);
+        display.print(" g");
+        break;
+      case WeightStatus::NoLoad:
+        display.print("EMPTY");
+        break;
+      case WeightStatus::Unstable:
+        display.print("UNSTABLE");
+        break;
+      case WeightStatus::Error:
+        display.print("ERROR");
+        break;
+    }
+  }
+
+  display.display();
 }
 
 void startBluetoothService() {
@@ -166,7 +248,9 @@ void startScales() {
   }
 
   Serial.println("Remove all items from the plates. Taring in 3 seconds...");
+  showDisplayMessage("Remove all items");
   delay(3000);
+  showDisplayMessage("Taring plates...");
   tareAllScales();
 }
 
@@ -248,6 +332,7 @@ void publishPlateReading(int index, const PlateReading &reading) {
 void publishAllPlates() {
   PlateReading readings[PLATE_COUNT];
   collectPlateReadings(readings);
+  updateDisplay(readings);
 
   for (int index = 0; index < PLATE_COUNT; index++) {
     publishPlateReading(index, readings[index]);
@@ -273,6 +358,7 @@ void handleTareRequest() {
 
   tareRequested = false;
   commandCharacteristic->setValue("TARE_RUNNING");
+  showDisplayMessage("Taring plates...");
 
   bool tareSucceeded = tareAllScales();
   commandCharacteristic->setValue(tareSucceeded ? "TARE_OK" : "TARE_FAILED");
@@ -299,6 +385,7 @@ void setup() {
   Serial.println("Smart Exit four-plate BLE service");
   Serial.println("Send 't' with every plate empty to tare all scales.");
 
+  startDisplay();
   startScales();
   startBluetoothService();
 }

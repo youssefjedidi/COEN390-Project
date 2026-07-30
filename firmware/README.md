@@ -10,6 +10,12 @@ The first two sketches use GPIO 16 for HX711 `DOUT` and GPIO 4 for `SCK`.
 The four-plate pin map and physical test sequence are recorded in
 `four_plate_ble_service/DEMO_TEST.md`.
 
+The integrated four-plate sketch supports a 128 x 64 SSD1306 I2C OLED at
+address `0x3C`. Connect the display to GPIO 21 (`SDA`) and GPIO 22 (`SCL`).
+The firmware continues running if no display is detected. Install the
+`Adafruit SSD1306` and `Adafruit GFX Library` Arduino libraries before compiling
+the sketch.
+
 The ESP32 Dev Module GPIO pins use 3.3 V logic and are not 5 V-tolerant. Power the HX711 logic from 3.3 V, or confirm that the amplifier board provides a separate 3.3 V logic supply. Do not connect a 5 V `DOUT` signal directly to GPIO 16.
 
 ## BLE weight service
