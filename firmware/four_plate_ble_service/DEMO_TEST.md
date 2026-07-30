@@ -24,3 +24,20 @@ Confirm these pins against the physical wiring before uploading.
 `UNSTABLE` while touching a plate is expected. A continuing `ERROR` means the
 pin map, HX711 connection, calibration direction, or load-cell wiring must be
 checked before the demo.
+
+## Tare test
+
+1. Connect the Android app and confirm that the station state is `Connected`.
+2. Remove every item from all four plates.
+3. Open Settings and press the tare control once.
+4. Confirm Serial Monitor prints `BLE tare request queued`, followed by a
+   successful tare message for Plates 1 through 4.
+5. Wait for weight notifications to resume. Every plate should settle at
+   `0.0,NO_LOAD` within the normal 5 g clear threshold.
+6. Place the known reference item on each plate in turn. Confirm the measured
+   weight still matches its calibrated value; tare must not alter calibration.
+
+For the failure case, disconnect one HX711 while the station is powered off,
+restart the station, and send another tare request. Serial Monitor should name
+the failed plate and finish with `BLE tare request failed`. Reconnect the HX711
+before continuing the demo.

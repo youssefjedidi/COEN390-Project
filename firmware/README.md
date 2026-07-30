@@ -17,11 +17,14 @@ The ESP32 Dev Module GPIO pins use 3.3 V logic and are not 5 V-tolerant. Power t
 The integrated sketch advertises as `SmartExit-Station` and uses these UUIDs:
 
 ```text
-Service:        05442887-a14c-4c36-906c-0fe1af039f9f
-Characteristic: e3abbc63-b985-4c8e-8e38-d423ce320106
+Service: 05442887-a14c-4c36-906c-0fe1af039f9f
+Weight:  e3abbc63-b985-4c8e-8e38-d423ce320106
+Command: e3abbc63-b985-4c8e-8e38-d423ce320107
 ```
 
-The characteristic supports read and notify. Its value follows the [Bluetooth payload contract](../docs/bluetooth_payload.md).
+The weight characteristic supports read and notify. The command characteristic
+supports read and write. Their values follow the
+[Bluetooth payload contract](../docs/bluetooth_payload.md).
 
 The four-plate sketch sends one notification per plate in this form:
 
@@ -31,6 +34,9 @@ plate_number,weight_grams,status
 
 For example, `3,146.2,OK` reports a stable 146.2 g reading on Plate 3.
 
-Before the first weight test, leave the scale empty while the ESP32 starts. When the Serial Monitor asks for calibration, place a 100 g reference weight on the scale and send `c`. The ESP32 stores the calibration factor for later restarts. Send `t` at any time to tare the empty scale again.
+Before the first weight test, leave every plate empty while the ESP32 starts.
+Send `t` in Serial Monitor or use the app's tare control to zero all four
+plates. Taring changes the zero offset but keeps the four calibration factors
+defined in the sketch.
 
 The sketches were compiled using Arduino's `ESP32 Dev Module` board profile, ESP32 Arduino core `2.0.17`, and `HX711 Arduino Library` version `0.7.5`. The BLE and Preferences libraries are included with the ESP32 Arduino package.
