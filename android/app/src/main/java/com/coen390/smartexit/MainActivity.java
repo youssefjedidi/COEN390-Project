@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
+import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -18,6 +19,9 @@ import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
+    static final String ACTION_SHOW_DISCONNECT_SNAPSHOT =
+            "com.coen390.smartexit.SHOW_DISCONNECT_SNAPSHOT";
+
     private static final int BLUETOOTH_PERMISSION_REQUEST = 1001;
     private static final int MAX_DASHBOARD_ITEMS = 4;
     private static final int REQUIRED_STABLE_SAMPLES = 3;
@@ -52,11 +56,18 @@ public class MainActivity extends Activity {
     private List<ItemProfile> visibleProfiles = new ArrayList<>();
     private StationConnectionManager connectionManager;
     private WeightStationConnection.Listener connectionListener;
+    private boolean showDisconnectSnapshot;
+
+    static Intent newIntentForDisconnectSnapshot(Context context) {
+        return new Intent(context, MainActivity.class)
+                .setAction(ACTION_SHOW_DISCONNECT_SNAPSHOT);
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        showDisconnectSnapshot = isDisconnectSnapshotIntent(getIntent());
 
         stationStatus = findViewById(R.id.stationStatus);
         readingState = findViewById(R.id.readingState);
@@ -103,6 +114,14 @@ public class MainActivity extends Activity {
         findViewById(R.id.settingsButton).setOnClickListener(
                 view -> startActivity(new Intent(this, SettingsActivity.class))
         );
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        showDisconnectSnapshot = isDisconnectSnapshotIntent(intent);
+        showSavedItems();
     }
 
     @Override
@@ -428,20 +447,28 @@ public class MainActivity extends Activity {
         );
 
         DisconnectSnapshot liveSnapshot = connectionManager.getLatestDashboardSnapshot();
-        if (liveSnapshot != null) {
-            renderDashboard(liveSnapshot.restore(visibleProfiles));
-            showLiveDashboardTime(liveSnapshot.getTimestampMillis());
+        DisconnectSnapshot cachedSnapshot = disconnectSnapshotRepository.load();
+        DisconnectSnapshot selectedSnapshot = DashboardSnapshotSelector.select(
+                liveSnapshot,
+                cachedSnapshot,
+                showDisconnectSnapshot
+        );
+        if (selectedSnapshot == null) {
+            showWaitingDashboard();
             return;
         }
 
-        DisconnectSnapshot cachedSnapshot = disconnectSnapshotRepository.load();
-        if (cachedSnapshot != null) {
-            renderDashboard(cachedSnapshot.restore(visibleProfiles));
-            showCachedDashboardTime(cachedSnapshot.getTimestampMillis());
+        renderDashboard(selectedSnapshot.restore(visibleProfiles));
+        if (selectedSnapshot == cachedSnapshot) {
+            showCachedDashboardTime(selectedSnapshot.getTimestampMillis());
         } else {
-            renderDashboard(dashboardStateCoordinator.getStates());
-            dashboardDataStatus.setText(R.string.dashboard_data_waiting);
+            showLiveDashboardTime(selectedSnapshot.getTimestampMillis());
         }
+    }
+
+    private void showWaitingDashboard() {
+        renderDashboard(dashboardStateCoordinator.getStates());
+        dashboardDataStatus.setText(R.string.dashboard_data_waiting);
     }
 
     private void renderDashboard(List<TrackedItemState> states) {
@@ -584,6 +611,7 @@ public class MainActivity extends Activity {
     }
 
     private void handleDashboardUpdate(List<TrackedItemState> states) {
+        showDisconnectSnapshot = false;
         long timestampMillis = System.currentTimeMillis();
         connectionManager.recordDashboardStates(states, timestampMillis);
         renderDashboard(states);
@@ -671,6 +699,11 @@ public class MainActivity extends Activity {
             renderDashboard(snapshot.restore(visibleProfiles));
             showCachedDashboardTime(snapshot.getTimestampMillis());
         }
+    }
+
+    private boolean isDisconnectSnapshotIntent(Intent intent) {
+        return intent != null
+                && ACTION_SHOW_DISCONNECT_SNAPSHOT.equals(intent.getAction());
     }
 
     private void showLiveDashboardTime(long timestampMillis) {

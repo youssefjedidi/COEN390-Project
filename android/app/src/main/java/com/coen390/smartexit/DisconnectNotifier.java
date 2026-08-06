@@ -39,7 +39,7 @@ final class DisconnectNotifier {
                 names
         );
 
-        Intent openApp = new Intent(appContext, MainActivity.class)
+        Intent openApp = MainActivity.newIntentForDisconnectSnapshot(appContext)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent contentIntent = PendingIntent.getActivity(
                 appContext,
