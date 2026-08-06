@@ -24,6 +24,10 @@ public class DashboardStateCoordinatorTest {
             new ItemProfile("wallet", "Wallet", 140.0, 152.0);
     private final ItemProfile keyCard =
             new ItemProfile("key-card", "Key card", 38.0, 44.0);
+    private final ItemProfile fob =
+            new ItemProfile("fob", "Fob", 37.0, 45.0);
+    private final ItemProfile medication =
+            new ItemProfile("medication", "Medication", 35.0, 46.0);
 
     @Test
     public void startsWithUnknownItems_beforeEveryPlateHasAStableReading() {
@@ -169,6 +173,21 @@ public class DashboardStateCoordinatorTest {
     }
 
     @Test
+    public void resolvesTwoCandidateMatchConsistently() {
+        assertAmbiguousChoiceFlow(keys, keyCard);
+    }
+
+    @Test
+    public void resolvesThreeCandidateMatchConsistently() {
+        assertAmbiguousChoiceFlow(keys, keyCard, fob);
+    }
+
+    @Test
+    public void resolvesFourCandidateMatchConsistently() {
+        assertAmbiguousChoiceFlow(keys, keyCard, fob, medication);
+    }
+
+    @Test
     public void leavesCandidatesUnknownWhenTheUserIsNotSure() {
         DashboardStateCoordinator coordinator = new DashboardStateCoordinator(
                 Arrays.asList(keys, keyCard),
@@ -213,8 +232,6 @@ public class DashboardStateCoordinatorTest {
 
     @Test
     public void asksAgainWhenTheCandidatesForAPlateChange() {
-        ItemProfile fob =
-                new ItemProfile("fob", "Fob", 42.0, 48.0);
         DashboardStateCoordinator coordinator = new DashboardStateCoordinator(
                 Arrays.asList(keys, keyCard, fob),
                 PLATE_COUNT,
@@ -245,6 +262,40 @@ public class DashboardStateCoordinatorTest {
         );
     }
 
+    private void assertAmbiguousChoiceFlow(ItemProfile... candidates) {
+        List<ItemProfile> candidateList = Arrays.asList(candidates);
+        DashboardStateCoordinator coordinator = new DashboardStateCoordinator(
+                candidateList,
+                PLATE_COUNT,
+                REQUIRED_SAMPLES,
+                STABILITY_TOLERANCE_GRAMS,
+                EMPTY_WEIGHT_THRESHOLD_GRAMS
+        );
+
+        List<TrackedItemState> unresolvedStates =
+                completeSnapshot(coordinator, 40.0);
+        RecognitionResult pendingResult =
+                coordinator.getPendingAmbiguousResults().get(0);
+
+        assertEquals(candidateList, pendingResult.getCandidates());
+        for (ItemProfile candidate : candidateList) {
+            assertState(unresolvedStates, candidate, TrackedItemStatus.UNKNOWN, null);
+        }
+
+        ItemProfile selectedItem = candidates[candidates.length - 1];
+        List<TrackedItemState> resolvedStates =
+                coordinator.confirmAmbiguousMatch(1, selectedItem.getId());
+
+        for (ItemProfile candidate : candidateList) {
+            TrackedItemStatus expectedStatus = candidate == selectedItem
+                    ? TrackedItemStatus.PRESENT
+                    : TrackedItemStatus.MISSING;
+            Integer expectedPlate = candidate == selectedItem ? 1 : null;
+            assertState(resolvedStates, candidate, expectedStatus, expectedPlate);
+        }
+        assertTrue(coordinator.getPendingAmbiguousResults().isEmpty());
+    }
+
     private Optional<List<TrackedItemState>> addStableReading(
             DashboardStateCoordinator coordinator,
             int plateNumber,
@@ -262,14 +313,14 @@ public class DashboardStateCoordinatorTest {
         return update;
     }
 
-    private void completeSnapshot(
+    private List<TrackedItemState> completeSnapshot(
             DashboardStateCoordinator coordinator,
             double firstPlateWeight
     ) {
         addStableReading(coordinator, 1, firstPlateWeight);
         addStableReading(coordinator, 2, 0.0);
         addStableReading(coordinator, 3, 0.0);
-        addStableReading(coordinator, 4, 0.0);
+        return addStableReading(coordinator, 4, 0.0).get();
     }
 
     private void assertState(
