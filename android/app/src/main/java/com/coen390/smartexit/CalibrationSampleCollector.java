@@ -70,7 +70,8 @@ final class CalibrationSampleCollector {
     private final int plateCount;
     private final int requiredSamples;
     private final double stabilityToleranceGrams;
-    private final double rangeMarginGrams;
+    private static final double MARGIN_PERCENTAGE = 0.05;
+    private final double minimumMarginGrams;
     private final double[] samples;
 
     private int selectedPlate;
@@ -103,7 +104,7 @@ final class CalibrationSampleCollector {
         this.plateCount = plateCount;
         this.requiredSamples = requiredSamples;
         this.stabilityToleranceGrams = stabilityToleranceGrams;
-        this.rangeMarginGrams = rangeMarginGrams;
+        this.minimumMarginGrams = rangeMarginGrams;
         samples = new double[requiredSamples];
     }
 
@@ -172,10 +173,16 @@ final class CalibrationSampleCollector {
         }
 
         active = false;
+        double sum = 0;
+        for (int sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
+            sum += samples[sampleIndex];
+        }
+        double averageWeight = sum / sampleCount;
+        double margin = Math.max(minimumMarginGrams, averageWeight * MARGIN_PERCENTAGE);
         return Update.complete(
                 sampleCount,
-                Math.max(0.0, minimum - rangeMarginGrams),
-                maximum + rangeMarginGrams
+                Math.max(0.0, minimum - margin),
+                maximum + margin
         );
     }
 
