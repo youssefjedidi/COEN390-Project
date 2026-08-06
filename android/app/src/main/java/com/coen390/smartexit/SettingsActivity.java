@@ -27,9 +27,12 @@ public class SettingsActivity extends Activity implements WeightStationConnectio
     private TextView connectionStatus;
     private TextView connectionFailureReason;
     private TextView tareStatus;
+    private TextView notificationStatus;
+    private TextView notificationDetail;
     private ProgressBar connectionProgress;
     private Button connectionActionButton;
     private Button tareButton;
+    private Button notificationActionButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -44,10 +47,16 @@ public class SettingsActivity extends Activity implements WeightStationConnectio
         connectionActionButton = findViewById(R.id.connectionActionButton);
         tareStatus = findViewById(R.id.tareStatus);
         tareButton = findViewById(R.id.tareButton);
+        notificationStatus = findViewById(R.id.notificationStatus);
+        notificationDetail = findViewById(R.id.notificationDetail);
+        notificationActionButton = findViewById(R.id.notificationActionButton);
+
+        new DisconnectNotifier(this).ensureChannel();
 
         findViewById(R.id.backButton).setOnClickListener(view -> finish());
         connectionActionButton.setOnClickListener(view -> handleConnectionAction());
         tareButton.setOnClickListener(view -> confirmTare());
+        notificationActionButton.setOnClickListener(view -> handleNotificationAction());
     }
 
     @Override
@@ -72,6 +81,8 @@ public class SettingsActivity extends Activity implements WeightStationConnectio
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == BLUETOOTH_PERMISSION_REQUEST) {
             renderScreen();
+        } else if (requestCode == NotificationPermissionHelper.REQUEST_CODE) {
+            renderNotificationState();
         }
     }
 
@@ -87,6 +98,43 @@ public class SettingsActivity extends Activity implements WeightStationConnectio
                 connectionManager.getState(),
                 connectionManager.getFailure()
         );
+        renderNotificationState();
+    }
+
+    private void renderNotificationState() {
+        NotificationPermissionHelper.State state = NotificationPermissionHelper.getState(this);
+        switch (state) {
+            case ALLOWED:
+                notificationStatus.setText(R.string.notification_status_allowed);
+                notificationDetail.setText(R.string.notification_detail_allowed);
+                notificationActionButton.setVisibility(View.GONE);
+                break;
+            case DENIED:
+                notificationStatus.setText(R.string.notification_status_denied);
+                notificationDetail.setText(R.string.notification_detail_denied);
+                notificationActionButton.setText(R.string.open_notification_settings);
+                notificationActionButton.setVisibility(View.VISIBLE);
+                break;
+            case NOT_REQUESTED:
+            default:
+                notificationStatus.setText(R.string.notification_status_not_requested);
+                notificationDetail.setText(R.string.notification_detail_not_requested);
+                notificationActionButton.setText(R.string.allow_notifications);
+                notificationActionButton.setVisibility(View.VISIBLE);
+                break;
+        }
+    }
+
+    private void handleNotificationAction() {
+        if (NotificationPermissionHelper.getState(this)
+                == NotificationPermissionHelper.State.NOT_REQUESTED) {
+            NotificationPermissionHelper.request(this);
+            return;
+        }
+
+        Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+        startActivity(intent);
     }
 
     private HardwareReadiness getHardwareReadiness() {
