@@ -3,6 +3,8 @@ package com.coen390.smartexit;
 import java.util.UUID;
 
 final class WeightStationConnection {
+    private static final long COMMAND_TIMEOUT_MS = 10_000;
+
     static final String DEVICE_NAME = "SmartExit-Station";
     static final UUID SERVICE_UUID = UUID.fromString("05442887-a14c-4c36-906c-0fe1af039f9f");
     static final UUID WEIGHT_CHARACTERISTIC_UUID = UUID.fromString("e3abbc63-b985-4c8e-8e38-d423ce320106");
@@ -31,7 +33,11 @@ final class WeightStationConnection {
     enum CommandFailure {
         NOT_CONNECTED,
         NOT_SUPPORTED,
-        WRITE_FAILED
+        WRITE_FAILED,
+        STATION_REJECTED,
+        TIMED_OUT,
+        DISCONNECTED,
+        IN_PROGRESS
     }
 
     interface Listener {
@@ -57,6 +63,10 @@ final class WeightStationConnection {
 
         void writeCommand(String command, CommandEvents events);
 
+        void scheduleCommandTimeout(Runnable timeout, long delayMillis);
+
+        void cancelCommandTimeout();
+
         void disconnect();
     }
 
@@ -71,6 +81,8 @@ final class WeightStationConnection {
 
         void onPayloadReceived(String payload);
 
+        void onCommandResponse(String response);
+
         void onDisconnected();
 
         void onConnectionFailed(Failure failure);
@@ -83,7 +95,7 @@ final class WeightStationConnection {
     }
 
     interface CommandCallback {
-        void onCommandSent();
+        void onCommandSucceeded();
 
         void onCommandFailed(CommandFailure failure);
     }
@@ -103,6 +115,7 @@ final class WeightStationConnection {
     private State state = State.IDLE;
     private Failure failure;
     private boolean commandSupported;
+    private volatile CommandCallback pendingCommand;
 
     WeightStationConnection(Transport transport, Listener listener) {
         this.transport = transport;
@@ -118,7 +131,7 @@ final class WeightStationConnection {
     }
 
     boolean canRequestTare() {
-        return state == State.CONNECTED && commandSupported;
+        return state == State.CONNECTED && commandSupported && pendingCommand == null;
     }
 
     void connect() {
@@ -141,6 +154,7 @@ final class WeightStationConnection {
     }
 
     void disconnect() {
+        finishPendingCommand(CommandFailure.DISCONNECTED);
         transport.stopScan();
         transport.disconnect();
         commandSupported = false;
@@ -156,21 +170,32 @@ final class WeightStationConnection {
             callback.onCommandFailed(CommandFailure.NOT_SUPPORTED);
             return;
         }
+        if (pendingCommand != null) {
+            callback.onCommandFailed(CommandFailure.IN_PROGRESS);
+            return;
+        }
 
+        pendingCommand = callback;
         transport.writeCommand("TARE", new CommandEvents() {
             @Override
             public void onCommandWritten() {
-                callback.onCommandSent();
+                if (pendingCommand != null) {
+                    transport.scheduleCommandTimeout(
+                            () -> finishPendingCommand(CommandFailure.TIMED_OUT),
+                            COMMAND_TIMEOUT_MS
+                    );
+                }
             }
 
             @Override
             public void onCommandWriteFailed() {
-                callback.onCommandFailed(CommandFailure.WRITE_FAILED);
+                finishPendingCommand(CommandFailure.WRITE_FAILED);
             }
         });
     }
 
     void close() {
+        finishPendingCommand(CommandFailure.DISCONNECTED);
         transport.stopScan();
         transport.disconnect();
         state = State.IDLE;
@@ -203,7 +228,14 @@ final class WeightStationConnection {
                     }
 
                     @Override
+                    public void onCommandResponse(String response) {
+                        handleCommandResponse(response);
+                    }
+
+                    @Override
                     public void onDisconnected() {
+                        commandSupported = false;
+                        finishPendingCommand(CommandFailure.DISCONNECTED);
                         changeState(State.DISCONNECTED, null);
                     }
 
@@ -228,7 +260,40 @@ final class WeightStationConnection {
         }
     }
 
+    private void handleCommandResponse(String response) {
+        if (pendingCommand == null || response == null) {
+            return;
+        }
+
+        String result = response.trim();
+        if ("TARE_OK".equals(result)) {
+            CommandCallback callback = takePendingCommand();
+            if (callback != null) {
+                callback.onCommandSucceeded();
+            }
+        } else if ("TARE_FAILED".equals(result)) {
+            finishPendingCommand(CommandFailure.STATION_REJECTED);
+        }
+    }
+
+    private void finishPendingCommand(CommandFailure failure) {
+        CommandCallback callback = takePendingCommand();
+        if (callback != null) {
+            callback.onCommandFailed(failure);
+        }
+    }
+
+    private synchronized CommandCallback takePendingCommand() {
+        CommandCallback callback = pendingCommand;
+        if (callback != null) {
+            pendingCommand = null;
+            transport.cancelCommandTimeout();
+        }
+        return callback;
+    }
+
     private void handleFailure(Failure failure) {
+        finishPendingCommand(CommandFailure.DISCONNECTED);
         transport.stopScan();
         transport.disconnect();
         commandSupported = false;

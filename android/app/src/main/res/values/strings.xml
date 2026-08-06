@@ -126,8 +126,11 @@
     <string name="tare_status_station_required">Connect to the station to zero the scales.</string>
     <string name="tare_status_firmware_required">The connected station does not support app-controlled tare.</string>
     <string name="tare_status_ready">Remove all items before zeroing the scales.</string>
-    <string name="tare_status_sending">Sending tare request\u2026</string>
-    <string name="tare_status_sent">Tare request sent to the station.</string>
+    <string name="tare_status_sending">Waiting for the station to zero all four scales\u2026</string>
+    <string name="tare_status_complete">All four scales were zeroed.</string>
+    <string name="tare_status_rejected">The station could not zero every scale. Check the plates and try again.</string>
+    <string name="tare_status_timeout">The station did not confirm the tare. Check the connection and try again.</string>
+    <string name="tare_status_disconnected">The station disconnected before the tare was confirmed.</string>
     <string name="tare_status_failed">The tare request could not be sent. Check the connection and try again.</string>
     <string name="delete_item">Delete item</string>
     <string name="delete_item_confirm_title">Delete this item?</string>

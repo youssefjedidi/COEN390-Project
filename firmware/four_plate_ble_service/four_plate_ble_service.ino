@@ -191,7 +191,9 @@ void startBluetoothService() {
 
   commandCharacteristic = service->createCharacteristic(
       COMMAND_CHARACTERISTIC_UUID,
-      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE |
+          BLECharacteristic::PROPERTY_NOTIFY);
+  commandCharacteristic->addDescriptor(new BLE2902());
   commandCharacteristic->setCallbacks(new StationCommandCallbacks());
   commandCharacteristic->setValue("READY");
 
@@ -362,6 +364,9 @@ void handleTareRequest() {
 
   bool tareSucceeded = tareAllScales();
   commandCharacteristic->setValue(tareSucceeded ? "TARE_OK" : "TARE_FAILED");
+  if (deviceConnected) {
+    commandCharacteristic->notify();
+  }
   Serial.println(tareSucceeded ? "BLE tare request complete."
                                : "BLE tare request failed.");
 }

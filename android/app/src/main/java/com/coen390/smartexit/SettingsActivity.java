@@ -262,9 +262,9 @@ public class SettingsActivity extends Activity implements WeightStationConnectio
         tareStatus.setText(R.string.tare_status_sending);
         connectionManager.requestTare(new WeightStationConnection.CommandCallback() {
             @Override
-            public void onCommandSent() {
+            public void onCommandSucceeded() {
                 runOnUiThread(() -> {
-                    tareStatus.setText(R.string.tare_status_sent);
+                    tareStatus.setText(R.string.tare_status_complete);
                     tareButton.setEnabled(connectionManager.canRequestTare());
                 });
             }
@@ -272,14 +272,27 @@ public class SettingsActivity extends Activity implements WeightStationConnectio
             @Override
             public void onCommandFailed(WeightStationConnection.CommandFailure failure) {
                 runOnUiThread(() -> {
-                    int text = failure == WeightStationConnection.CommandFailure.NOT_SUPPORTED
-                            ? R.string.tare_status_firmware_required
-                            : R.string.tare_status_failed;
-                    tareStatus.setText(text);
+                    tareStatus.setText(tareFailureText(failure));
                     tareButton.setEnabled(connectionManager.canRequestTare());
                 });
             }
         });
+    }
+
+    private int tareFailureText(WeightStationConnection.CommandFailure failure) {
+        if (failure == WeightStationConnection.CommandFailure.NOT_SUPPORTED) {
+            return R.string.tare_status_firmware_required;
+        }
+        if (failure == WeightStationConnection.CommandFailure.STATION_REJECTED) {
+            return R.string.tare_status_rejected;
+        }
+        if (failure == WeightStationConnection.CommandFailure.TIMED_OUT) {
+            return R.string.tare_status_timeout;
+        }
+        if (failure == WeightStationConnection.CommandFailure.DISCONNECTED) {
+            return R.string.tare_status_disconnected;
+        }
+        return R.string.tare_status_failed;
     }
 
     private int connectionFailureText(WeightStationConnection.Failure failure) {
