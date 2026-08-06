@@ -89,12 +89,12 @@ final class DashboardStateCoordinator {
             int plateNumber = result.getReading().getPlateNumber();
             if (result.getStatus() == RecognitionStatus.AMBIGUOUS
                     && ambiguityChoices[plateNumber] == null) {
-                List<ItemProfile> unclaimedCandidates = unclaimedCandidates(result);
-                if (!unclaimedCandidates.isEmpty()) {
+                List<ItemProfile> availableCandidates = availableCandidatesFor(result);
+                if (!availableCandidates.isEmpty()) {
                     ambiguousResults.add(
                             RecognitionResult.ambiguous(
                                     result.getReading(),
-                                    unclaimedCandidates
+                                    availableCandidates
                             )
                     );
                 }
@@ -105,8 +105,8 @@ final class DashboardStateCoordinator {
 
     List<TrackedItemState> confirmAmbiguousMatch(int plateNumber, String itemId) {
         RecognitionResult ambiguousResult = requireAmbiguousResult(plateNumber);
-        List<ItemProfile> unclaimedCandidates = unclaimedCandidates(ambiguousResult);
-        ItemProfile selectedItem = findItem(unclaimedCandidates, itemId);
+        List<ItemProfile> availableCandidates = availableCandidatesFor(ambiguousResult);
+        ItemProfile selectedItem = findItem(availableCandidates, itemId);
         if (selectedItem == null) {
             throw new IllegalArgumentException(
                     "item " + itemId + " is not available for plate " + plateNumber
@@ -119,7 +119,7 @@ final class DashboardStateCoordinator {
         );
         ambiguityChoices[plateNumber] =
                 AmbiguityChoice.confirmed(candidateKey(ambiguousResult), itemId);
-        resolveForcedMatches();
+        resolveCertainMatches();
         return itemStateTracker.update(completedSnapshot);
     }
 
@@ -202,58 +202,81 @@ final class DashboardStateCoordinator {
                     RecognitionResult.matched(result.getReading(), selectedItem)
             );
         }
-        resolveForcedMatches();
+        resolveCertainMatches();
     }
 
-    private void resolveForcedMatches() {
-        // Each new match can leave a single unclaimed candidate on another plate.
-        while (resolveNextForcedMatch()) {
+    private void resolveCertainMatches() {
+        // Resolving one plate can make the remaining candidate on another plate certain.
+        while (resolveOneCertainResult()) {
         }
     }
 
-    private boolean resolveNextForcedMatch() {
+    private boolean resolveOneCertainResult() {
         for (int index = 0; index < completedSnapshot.size(); index++) {
             RecognitionResult result = completedSnapshot.get(index);
             if (result.getStatus() != RecognitionStatus.AMBIGUOUS) {
                 continue;
             }
 
-            List<ItemProfile> candidates = unclaimedCandidates(result);
-            int plateNumber = result.getReading().getPlateNumber();
-            if (candidates.isEmpty()) {
-                completedSnapshot.set(index, RecognitionResult.unknown(result.getReading()));
-                ambiguityChoices[plateNumber] = null;
+            List<ItemProfile> availableCandidates = availableCandidatesFor(result);
+            if (availableCandidates.isEmpty()) {
+                markAsUnknown(index, result);
                 return true;
             }
-            if (candidates.size() == 1
-                    && isCandidateUniqueToPlate(candidates.get(0), plateNumber)) {
-                ItemProfile item = candidates.get(0);
-                completedSnapshot.set(
-                        index,
-                        RecognitionResult.matched(result.getReading(), item)
-                );
-                ambiguityChoices[plateNumber] =
-                        AmbiguityChoice.confirmed(candidateKey(result), item.getId());
-                return true;
+
+            if (availableCandidates.size() != 1) {
+                continue;
             }
+
+            ItemProfile onlyCandidate = availableCandidates.get(0);
+            if (!isCandidateExclusiveToPlate(onlyCandidate, result)) {
+                continue;
+            }
+
+            applyInferredMatch(index, result, onlyCandidate);
+            return true;
         }
         return false;
     }
 
-    private boolean isCandidateUniqueToPlate(ItemProfile item, int plateNumber) {
+    private void markAsUnknown(int index, RecognitionResult result) {
+        int plateNumber = result.getReading().getPlateNumber();
+        completedSnapshot.set(index, RecognitionResult.unknown(result.getReading()));
+        ambiguityChoices[plateNumber] = null;
+    }
+
+    private void applyInferredMatch(
+            int index,
+            RecognitionResult result,
+            ItemProfile item
+    ) {
+        int plateNumber = result.getReading().getPlateNumber();
+        completedSnapshot.set(
+                index,
+                RecognitionResult.matched(result.getReading(), item)
+        );
+        ambiguityChoices[plateNumber] =
+                AmbiguityChoice.confirmed(candidateKey(result), item.getId());
+    }
+
+    private boolean isCandidateExclusiveToPlate(
+            ItemProfile item,
+            RecognitionResult selectedResult
+    ) {
+        int selectedPlate = selectedResult.getReading().getPlateNumber();
         for (RecognitionResult result : completedSnapshot) {
-            if (result.getReading().getPlateNumber() == plateNumber
+            if (result.getReading().getPlateNumber() == selectedPlate
                     || result.getStatus() != RecognitionStatus.AMBIGUOUS) {
                 continue;
             }
-            if (findItem(unclaimedCandidates(result), item.getId()) != null) {
+            if (findItem(availableCandidatesFor(result), item.getId()) != null) {
                 return false;
             }
         }
         return true;
     }
 
-    private List<ItemProfile> unclaimedCandidates(RecognitionResult result) {
+    private List<ItemProfile> availableCandidatesFor(RecognitionResult result) {
         List<ItemProfile> candidates = new ArrayList<>();
         int plateNumber = result.getReading().getPlateNumber();
         for (ItemProfile candidate : result.getCandidates()) {
@@ -270,11 +293,15 @@ final class DashboardStateCoordinator {
                     || result.getStatus() != RecognitionStatus.MATCHED) {
                 continue;
             }
-            if (result.getCandidates().get(0).getId().equals(item.getId())) {
+            if (matchedItem(result).getId().equals(item.getId())) {
                 return true;
             }
         }
         return false;
+    }
+
+    private ItemProfile matchedItem(RecognitionResult result) {
+        return result.getCandidates().get(0);
     }
 
     private String candidateKey(RecognitionResult result) {
