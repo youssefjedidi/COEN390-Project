@@ -605,12 +605,6 @@ public class MainActivity extends Activity {
         ambiguousDialogVisible = true;
         new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.ambiguous_match_title, plateNumber))
-                .setMessage(
-                        getString(
-                                R.string.ambiguous_match_message,
-                                result.getReading().getWeightGrams()
-                        )
-                )
                 .setItems(
                         candidateNames(candidates),
                         (dialog, selectedIndex) ->
@@ -652,7 +646,10 @@ public class MainActivity extends Activity {
 
     private void finishAmbiguousChoice(List<TrackedItemState> states) {
         ambiguousDialogVisible = false;
+        long timestampMillis = System.currentTimeMillis();
+        connectionManager.recordDashboardStates(states, timestampMillis);
         renderDashboard(states);
+        showLiveDashboardTime(timestampMillis);
         showNextAmbiguousMatch();
     }
 
