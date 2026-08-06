@@ -107,19 +107,32 @@ public class RecognitionResultTest {
     }
 
     @Test
-    public void ambiguousResult_rejectsFewerThanTwoCandidates() {
+    public void ambiguousResult_rejectsEmptyCandidateList() {
         IllegalArgumentException error = assertThrows(
                 IllegalArgumentException.class,
                 () -> RecognitionResult.ambiguous(
                         new PlateReading(1, 120.0),
-                        Collections.singletonList(new ItemProfile("Keys"))
+                        Collections.emptyList()
                 )
         );
 
         assertEquals(
-                "an ambiguous result requires at least two candidates, but received 1",
+                "an ambiguous result requires at least one candidate",
                 error.getMessage()
         );
+    }
+
+    @Test
+    public void ambiguousResult_acceptsOneRemainingCandidate() {
+        ItemProfile phone = new ItemProfile("phone", "Phone", 190.0, 210.0);
+
+        RecognitionResult result = RecognitionResult.ambiguous(
+                new PlateReading(2, 200.0),
+                Collections.singletonList(phone)
+        );
+
+        assertEquals(RecognitionStatus.AMBIGUOUS, result.getStatus());
+        assertEquals(Collections.singletonList(phone), result.getCandidates());
     }
 
     @Test

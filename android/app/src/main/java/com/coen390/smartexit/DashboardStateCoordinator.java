@@ -90,7 +90,7 @@ final class DashboardStateCoordinator {
             if (result.getStatus() == RecognitionStatus.AMBIGUOUS
                     && ambiguityChoices[plateNumber] == null) {
                 List<ItemProfile> unclaimedCandidates = unclaimedCandidates(result);
-                if (unclaimedCandidates.size() >= 2) {
+                if (!unclaimedCandidates.isEmpty()) {
                     ambiguousResults.add(
                             RecognitionResult.ambiguous(
                                     result.getReading(),
@@ -225,7 +225,8 @@ final class DashboardStateCoordinator {
                 ambiguityChoices[plateNumber] = null;
                 return true;
             }
-            if (candidates.size() == 1) {
+            if (candidates.size() == 1
+                    && isCandidateUniqueToPlate(candidates.get(0), plateNumber)) {
                 ItemProfile item = candidates.get(0);
                 completedSnapshot.set(
                         index,
@@ -237,6 +238,19 @@ final class DashboardStateCoordinator {
             }
         }
         return false;
+    }
+
+    private boolean isCandidateUniqueToPlate(ItemProfile item, int plateNumber) {
+        for (RecognitionResult result : completedSnapshot) {
+            if (result.getReading().getPlateNumber() == plateNumber
+                    || result.getStatus() != RecognitionStatus.AMBIGUOUS) {
+                continue;
+            }
+            if (findItem(unclaimedCandidates(result), item.getId()) != null) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private List<ItemProfile> unclaimedCandidates(RecognitionResult result) {

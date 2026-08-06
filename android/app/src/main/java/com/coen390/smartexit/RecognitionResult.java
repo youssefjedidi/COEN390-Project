@@ -41,10 +41,9 @@ public final class RecognitionResult {
                     "an ambiguous result requires a candidate list"
             );
         }
-        if (candidates.size() < 2) {
+        if (candidates.isEmpty()) {
             throw new IllegalArgumentException(
-                    "an ambiguous result requires at least two candidates, but received "
-                            + candidates.size()
+                    "an ambiguous result requires at least one candidate"
             );
         }
         if (candidates.contains(null)) {

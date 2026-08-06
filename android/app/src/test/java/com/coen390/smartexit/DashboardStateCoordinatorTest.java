@@ -256,6 +256,71 @@ public class DashboardStateCoordinatorTest {
     }
 
     @Test
+    public void doesNotChooseBetweenTwoPlatesThatCouldHoldTheRemainingItem() {
+        ItemProfile personalPhone =
+                new ItemProfile("personal-phone", "Personal phone", 190.0, 210.0);
+        ItemProfile workPhone =
+                new ItemProfile("work-phone", "Work phone", 190.0, 210.0);
+        DashboardStateCoordinator coordinator = new DashboardStateCoordinator(
+                Arrays.asList(personalPhone, workPhone),
+                PLATE_COUNT,
+                REQUIRED_SAMPLES,
+                STABILITY_TOLERANCE_GRAMS,
+                EMPTY_WEIGHT_THRESHOLD_GRAMS
+        );
+
+        completeSnapshot(coordinator, 200.0, 200.0, 200.0, 0.0);
+        List<TrackedItemState> states =
+                coordinator.confirmAmbiguousMatch(1, personalPhone.getId());
+
+        assertState(states, personalPhone, TrackedItemStatus.PRESENT, 1);
+        assertState(states, workPhone, TrackedItemStatus.UNKNOWN, null);
+
+        List<RecognitionResult> pendingResults =
+                coordinator.getPendingAmbiguousResults();
+        assertEquals(2, pendingResults.size());
+        assertEquals(2, pendingResults.get(0).getReading().getPlateNumber());
+        assertEquals(3, pendingResults.get(1).getReading().getPlateNumber());
+        assertEquals(
+                Arrays.asList(workPhone),
+                pendingResults.get(0).getCandidates()
+        );
+        assertEquals(
+                Arrays.asList(workPhone),
+                pendingResults.get(1).getCandidates()
+        );
+    }
+
+    @Test
+    public void asksAgainWhenASimilarItemIsPlacedAfterThePlateWasEmpty() {
+        ItemProfile personalPhone =
+                new ItemProfile("personal-phone", "Personal phone", 190.0, 210.0);
+        ItemProfile workPhone =
+                new ItemProfile("work-phone", "Work phone", 190.0, 210.0);
+        DashboardStateCoordinator coordinator = new DashboardStateCoordinator(
+                Arrays.asList(personalPhone, workPhone),
+                PLATE_COUNT,
+                REQUIRED_SAMPLES,
+                STABILITY_TOLERANCE_GRAMS,
+                EMPTY_WEIGHT_THRESHOLD_GRAMS
+        );
+
+        completeSnapshot(coordinator, 200.0, 0.0, 0.0, 0.0);
+        coordinator.confirmAmbiguousMatch(1, personalPhone.getId());
+
+        completeSnapshot(coordinator, 0.0, 0.0, 0.0, 0.0);
+        completeSnapshot(coordinator, 202.0, 0.0, 0.0, 0.0);
+
+        List<RecognitionResult> pendingResults =
+                coordinator.getPendingAmbiguousResults();
+        assertEquals(1, pendingResults.size());
+        assertEquals(
+                Arrays.asList(personalPhone, workPhone),
+                pendingResults.get(0).getCandidates()
+        );
+    }
+
+    @Test
     public void leavesCandidatesUnknownWhenTheUserIsNotSure() {
         DashboardStateCoordinator coordinator = new DashboardStateCoordinator(
                 Arrays.asList(keys, keyCard),
