@@ -1,6 +1,7 @@
 package com.coen390.smartexit;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
 import android.content.Intent;
@@ -44,10 +45,9 @@ public class SettingsActivity extends Activity implements WeightStationConnectio
         tareStatus = findViewById(R.id.tareStatus);
         tareButton = findViewById(R.id.tareButton);
 
-        findViewById(R.id.navDashboardButton).setOnClickListener(view -> finish());
-        findViewById(R.id.navSettingsButton).setEnabled(false);
+        findViewById(R.id.backButton).setOnClickListener(view -> finish());
         connectionActionButton.setOnClickListener(view -> handleConnectionAction());
-        tareButton.setOnClickListener(view -> requestTare());
+        tareButton.setOnClickListener(view -> confirmTare());
     }
 
     @Override
@@ -241,7 +241,20 @@ public class SettingsActivity extends Activity implements WeightStationConnectio
 
     private void renderTareState(boolean enabled, int statusText) {
         tareButton.setEnabled(enabled);
+        tareButton.setAlpha(enabled ? 1.0f : 0.45f);
         tareStatus.setText(statusText);
+    }
+
+    private void confirmTare() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.tare_confirm_title)
+                .setMessage(R.string.tare_confirm_message)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(
+                        R.string.action_tare,
+                        (dialog, which) -> requestTare()
+                )
+                .show();
     }
 
     private void requestTare() {
