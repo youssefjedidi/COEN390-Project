@@ -43,10 +43,56 @@ public class CalibrationSampleCollectorTest {
         collector.add(okReading(3, 142.0f));
         CalibrationSampleCollector.Update complete = collector.add(okReading(3, 141.0f));
 
+        // average = 141g, 5% of 141g = 7.05g, which is above the 5g minimum.
         assertEquals(CalibrationSampleCollector.Status.COMPLETE, complete.getStatus());
-        assertEquals(135.0, complete.getMinimumWeightGrams(), 0.0001);
-        assertEquals(147.0, complete.getMaximumWeightGrams(), 0.0001);
+        assertEquals(132.95, complete.getMinimumWeightGrams(), 0.0001);
+        assertEquals(149.05, complete.getMaximumWeightGrams(), 0.0001);
         assertFalse(collector.isActive());
+    }
+
+    @Test
+    public void lightItemUsesMinimumFiveGramMargin() {
+        CalibrationSampleCollector collector = new CalibrationSampleCollector(4, 3, 5.0, 5.0);
+        collector.start(1);
+
+        collector.add(okReading(1, 19.0f));
+        collector.add(okReading(1, 21.0f));
+        CalibrationSampleCollector.Update complete = collector.add(okReading(1, 20.0f));
+
+        // average = 20g, 5% of 20g = 1g, so the 5g minimum applies instead.
+        // min/max sample = 19/21, so the range is 19-5=14 to 21+5=26.
+        assertEquals(14.0, complete.getMinimumWeightGrams(), 0.0001);
+        assertEquals(26.0, complete.getMaximumWeightGrams(), 0.0001);
+    }
+
+    @Test
+    public void mediumItemUsesPercentageMarginOnceItExceedsMinimum() {
+        CalibrationSampleCollector collector = new CalibrationSampleCollector(4, 3, 5.0, 5.0);
+        collector.start(1);
+
+        collector.add(okReading(1, 119.0f));
+        collector.add(okReading(1, 121.0f));
+        CalibrationSampleCollector.Update complete = collector.add(okReading(1, 120.0f));
+
+        // average = 120g, 5% of 120g = 6g, which is above the 5g minimum.
+        // min/max sample = 119/121, so the range is 119-6=113 to 121+6=127.
+        assertEquals(113.0, complete.getMinimumWeightGrams(), 0.0001);
+        assertEquals(127.0, complete.getMaximumWeightGrams(), 0.0001);
+    }
+
+    @Test
+    public void heavyItemMarginScalesProportionally() {
+        CalibrationSampleCollector collector = new CalibrationSampleCollector(4, 3, 5.0, 5.0);
+        collector.start(1);
+
+        collector.add(okReading(1, 499.0f));
+        collector.add(okReading(1, 501.0f));
+        CalibrationSampleCollector.Update complete = collector.add(okReading(1, 500.0f));
+
+        // average = 500g, 5% of 500g = 25g.
+        // min/max sample = 499/501, so the range is 499-25=474 to 501+25=526.
+        assertEquals(474.0, complete.getMinimumWeightGrams(), 0.0001);
+        assertEquals(526.0, complete.getMaximumWeightGrams(), 0.0001);
     }
 
     @Test
