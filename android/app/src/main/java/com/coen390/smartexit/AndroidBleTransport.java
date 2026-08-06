@@ -44,6 +44,7 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
     private UUID expectedCommandCharacteristicUuid;
     private BluetoothGattCharacteristic commandCharacteristic;
     private WeightStationConnection.CommandEvents commandEvents;
+    private Runnable commandTimeout;
     private boolean connectionReady;
 
     AndroidBleTransport(Context context, BluetoothAdapter bluetoothAdapter) {
@@ -166,8 +167,24 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
     }
 
     @Override
+    public void scheduleCommandTimeout(Runnable timeout, long delayMillis) {
+        cancelCommandTimeout();
+        commandTimeout = timeout;
+        mainHandler.postDelayed(timeout, delayMillis);
+    }
+
+    @Override
+    public void cancelCommandTimeout() {
+        if (commandTimeout != null) {
+            mainHandler.removeCallbacks(commandTimeout);
+            commandTimeout = null;
+        }
+    }
+
+    @Override
     @SuppressLint("MissingPermission")
     public void disconnect() {
+        cancelCommandTimeout();
         connectionEvents = null;
         commandEvents = null;
         disconnectGatt();
@@ -234,7 +251,7 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
                 BluetoothGattCharacteristic characteristic,
                 byte[] value
         ) {
-            handleWeightNotification(gatt, characteristic, value);
+            handleCharacteristicNotification(gatt, characteristic, value);
         }
 
         @Override
@@ -244,7 +261,7 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
                 BluetoothGattCharacteristic characteristic
         ) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-                handleWeightNotification(gatt, characteristic, characteristic.getValue());
+                handleCharacteristicNotification(gatt, characteristic, characteristic.getValue());
             }
         }
     };
@@ -294,19 +311,31 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
             return;
         }
 
+        UUID characteristicUuid = descriptor.getCharacteristic().getUuid();
         if (status != BluetoothGatt.GATT_SUCCESS) {
-            finishConnectionWithFailure(WeightStationConnection.Failure.NOTIFICATION_SETUP_FAILED);
+            if (expectedCommandCharacteristicUuid.equals(characteristicUuid)) {
+                commandCharacteristic = null;
+                finishNotificationSetup();
+            } else {
+                finishConnectionWithFailure(
+                        WeightStationConnection.Failure.NOTIFICATION_SETUP_FAILED
+                );
+            }
             return;
         }
 
-        connectionReady = true;
-        WeightStationConnection.ConnectionEvents events = connectionEvents;
-        if (events != null) {
-            events.onReady(commandCharacteristic != null);
+        if (expectedCharacteristicUuid.equals(characteristicUuid)) {
+            if (commandCharacteristic == null) {
+                finishNotificationSetup();
+            } else {
+                enableCommandNotifications(gatt);
+            }
+        } else if (expectedCommandCharacteristicUuid.equals(characteristicUuid)) {
+            finishNotificationSetup();
         }
     }
 
-    private void handleWeightNotification(
+    private void handleCharacteristicNotification(
             BluetoothGatt gatt,
             BluetoothGattCharacteristic characteristic,
             byte[] value
@@ -315,17 +344,20 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
             return;
         }
 
-        if (!expectedCharacteristicUuid.equals(characteristic.getUuid())) {
-            return;
-        }
-
         if (value == null) {
             return;
         }
 
         WeightStationConnection.ConnectionEvents events = connectionEvents;
-        if (events != null) {
+        if (events == null) {
+            return;
+        }
+
+        UUID characteristicUuid = characteristic.getUuid();
+        if (expectedCharacteristicUuid.equals(characteristicUuid)) {
             events.onPayloadReceived(new String(value, StandardCharsets.UTF_8));
+        } else if (expectedCommandCharacteristicUuid.equals(characteristicUuid)) {
+            events.onCommandResponse(new String(value, StandardCharsets.UTF_8));
         }
     }
 
@@ -354,11 +386,12 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
             finishConnectionWithFailure(WeightStationConnection.Failure.CHARACTERISTIC_MISSING);
             return;
         }
-
         BluetoothGattCharacteristic candidate =
                 service.getCharacteristic(expectedCommandCharacteristicUuid);
         if (candidate != null
-                && (candidate.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) != 0) {
+                && (candidate.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) != 0
+                && (candidate.getProperties() & BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0
+                && candidate.getDescriptor(CLIENT_CONFIGURATION_UUID) != null) {
             commandCharacteristic = candidate;
         }
 
@@ -370,6 +403,25 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
 
         if (!writeNotificationDescriptor(gatt, descriptor)) {
             finishConnectionWithFailure(WeightStationConnection.Failure.NOTIFICATION_SETUP_FAILED);
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private void enableCommandNotifications(BluetoothGatt gatt) {
+        BluetoothGattDescriptor descriptor =
+                commandCharacteristic.getDescriptor(CLIENT_CONFIGURATION_UUID);
+        if (!gatt.setCharacteristicNotification(commandCharacteristic, true)
+                || !writeNotificationDescriptor(gatt, descriptor)) {
+            commandCharacteristic = null;
+            finishNotificationSetup();
+        }
+    }
+
+    private void finishNotificationSetup() {
+        connectionReady = true;
+        WeightStationConnection.ConnectionEvents events = connectionEvents;
+        if (events != null) {
+            events.onReady(commandCharacteristic != null);
         }
     }
 
@@ -452,6 +504,7 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
         connectionReady = false;
         commandCharacteristic = null;
         commandEvents = null;
+        cancelCommandTimeout();
 
         if (gatt == null) {
             return;
@@ -471,6 +524,7 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
         connectionReady = false;
         commandCharacteristic = null;
         commandEvents = null;
+        cancelCommandTimeout();
         safeCloseGatt(gatt);
     }
 

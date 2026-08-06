@@ -71,7 +71,7 @@ public class WeightStationConnectionTest {
     }
 
     @Test
-    public void tareRequestWritesCommandThroughTransport() {
+    public void tareRequestSucceedsOnlyAfterStationConfirmsIt() {
         connection.connect();
         transport.findStation();
         transport.finishConnection(true);
@@ -81,8 +81,76 @@ public class WeightStationConnectionTest {
         transport.finishCommand();
 
         assertEquals("TARE", transport.lastCommand);
+        assertFalse(command.succeeded);
+        assertFalse(connection.canRequestTare());
+
+        transport.sendCommandResponse("TARE_OK");
+
         assertTrue(command.succeeded);
         assertNull(command.failure);
+        assertTrue(connection.canRequestTare());
+    }
+
+    @Test
+    public void stationCanRejectTareAfterReceivingTheCommand() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection(true);
+
+        CommandRecorder command = new CommandRecorder();
+        connection.requestTare(command);
+        transport.finishCommand();
+        transport.sendCommandResponse("TARE_FAILED");
+
+        assertFalse(command.succeeded);
+        assertEquals(WeightStationConnection.CommandFailure.STATION_REJECTED, command.failure);
+    }
+
+    @Test
+    public void tareRequestTimesOutWhenStationDoesNotReply() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection(true);
+
+        CommandRecorder command = new CommandRecorder();
+        connection.requestTare(command);
+        transport.finishCommand();
+        transport.runCommandTimeout();
+
+        assertFalse(command.succeeded);
+        assertEquals(WeightStationConnection.CommandFailure.TIMED_OUT, command.failure);
+    }
+
+    @Test
+    public void disconnectFailsPendingTareRequest() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection(true);
+
+        CommandRecorder command = new CommandRecorder();
+        connection.requestTare(command);
+        transport.finishCommand();
+        transport.dropConnection();
+
+        assertFalse(command.succeeded);
+        assertEquals(WeightStationConnection.CommandFailure.DISCONNECTED, command.failure);
+    }
+
+    @Test
+    public void lateStationResponseIsIgnoredAfterTimeout() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection(true);
+
+        CommandRecorder command = new CommandRecorder();
+        connection.requestTare(command);
+        transport.finishCommand();
+        transport.runCommandTimeout();
+        transport.sendCommandResponse("TARE_OK");
+
+        assertFalse(command.succeeded);
+        assertEquals(1, command.completionCount);
+        assertEquals(WeightStationConnection.CommandFailure.TIMED_OUT, command.failure);
     }
 
     @Test
@@ -235,16 +303,19 @@ public class WeightStationConnectionTest {
     private static final class CommandRecorder
             implements WeightStationConnection.CommandCallback {
         boolean succeeded;
+        int completionCount;
         WeightStationConnection.CommandFailure failure;
 
         @Override
-        public void onCommandSent() {
+        public void onCommandSucceeded() {
             succeeded = true;
+            completionCount++;
         }
 
         @Override
         public void onCommandFailed(WeightStationConnection.CommandFailure failure) {
             this.failure = failure;
+            completionCount++;
         }
     }
 
@@ -257,6 +328,7 @@ public class WeightStationConnectionTest {
         WeightStationConnection.ConnectionEvents connectionEvents;
         WeightStationConnection.CommandEvents commandEvents;
         String lastCommand;
+        Runnable commandTimeout;
         int stopScanCount;
         int disconnectCount;
 
@@ -295,6 +367,16 @@ public class WeightStationConnectionTest {
         }
 
         @Override
+        public void scheduleCommandTimeout(Runnable timeout, long delayMillis) {
+            commandTimeout = timeout;
+        }
+
+        @Override
+        public void cancelCommandTimeout() {
+            commandTimeout = null;
+        }
+
+        @Override
         public void disconnect() {
             disconnectCount++;
         }
@@ -322,6 +404,16 @@ public class WeightStationConnectionTest {
 
         void failCommand() {
             commandEvents.onCommandWriteFailed();
+        }
+
+        void sendCommandResponse(String response) {
+            connectionEvents.onCommandResponse(response);
+        }
+
+        void runCommandTimeout() {
+            Runnable timeout = commandTimeout;
+            commandTimeout = null;
+            timeout.run();
         }
 
         void sendPayload(String payload) {
