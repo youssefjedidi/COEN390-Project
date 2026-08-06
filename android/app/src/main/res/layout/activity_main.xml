@@ -19,40 +19,28 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/navDashboardButton"
+            <TextView
                 android:layout_width="0dp"
-                android:layout_height="44dp"
-                android:layout_marginEnd="8dp"
+                android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:background="@drawable/primary_button_background"
-                android:text="@string/nav_dashboard"
-                android:textAllCaps="false"
-                android:textColor="@color/button_primary_text"
-                android:textSize="14sp" />
+                android:text="@string/app_name"
+                android:textColor="@color/text_primary"
+                android:textSize="28sp"
+                android:textStyle="bold" />
 
-            <Button
-                android:id="@+id/navSettingsButton"
-                android:layout_width="0dp"
-                android:layout_height="44dp"
-                android:layout_weight="1"
-                android:background="@drawable/secondary_button_background"
-                android:text="@string/settings"
-                android:textAllCaps="false"
-                android:textColor="@color/button_secondary_text"
-                android:textSize="14sp" />
+            <ImageButton
+                android:id="@+id/settingsButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/open_settings"
+                android:padding="12dp"
+                android:src="@drawable/ic_settings"
+                android:tint="@color/text_primary" />
         </LinearLayout>
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/app_name"
-            android:textColor="@color/text_primary"
-            android:textSize="28sp"
-            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/stationStatus"
