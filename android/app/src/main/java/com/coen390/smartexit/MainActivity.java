@@ -100,11 +100,7 @@ public class MainActivity extends Activity {
                 view -> startActivity(AddEditItemActivity.newIntentForAdd(this))
         );
 
-        Button navDashboardButton = findViewById(R.id.navDashboardButton);
-        navDashboardButton.setEnabled(false);
-
-        Button navSettingsButton = findViewById(R.id.navSettingsButton);
-        navSettingsButton.setOnClickListener(
+        findViewById(R.id.settingsButton).setOnClickListener(
                 view -> startActivity(new Intent(this, SettingsActivity.class))
         );
     }
