@@ -650,7 +650,10 @@ public class MainActivity extends Activity {
 
     private void finishAmbiguousChoice(List<TrackedItemState> states) {
         ambiguousDialogVisible = false;
+        long timestampMillis = System.currentTimeMillis();
+        connectionManager.recordDashboardStates(states, timestampMillis);
         renderDashboard(states);
+        showLiveDashboardTime(timestampMillis);
         showNextAmbiguousMatch();
     }
 
