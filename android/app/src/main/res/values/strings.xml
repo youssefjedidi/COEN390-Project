@@ -81,22 +81,15 @@
     <string name="calibration_label">Calibration</string>
     <string name="calibration_status_uncalibrated">Not calibrated yet</string>
     <string name="calibration_status_format">Calibrated range: %1$.0f\u2013%2$.0f g</string>
-    <string name="calibration_plate_label">Plate used for calibration</string>
-    <string-array name="calibration_plates">
-        <item>Plate 1</item>
-        <item>Plate 2</item>
-        <item>Plate 3</item>
-        <item>Plate 4</item>
-    </string-array>
     <string name="calibration_start">Start calibration</string>
     <string name="calibration_restart">Restart calibration</string>
     <string name="calibration_again">Calibrate again</string>
     <string name="calibration_station_required">Connect the station before calibrating an item.</string>
-    <string name="calibration_instructions">Place the item alone on the selected plate, then start calibration.</string>
+    <string name="calibration_instructions">Leave only this item on the station. The app will detect which plate holds it.</string>
     <string name="calibration_collecting_format">Plate %1$d: collecting stable readings (%2$d of %3$d)</string>
     <string name="calibration_waiting_for_item">Place the item on plate %1$d.</string>
     <string name="calibration_waiting_for_stable">Hold the item still while the reading settles.</string>
-    <string name="calibration_sensor_error">The selected plate reported a sensor error. Check the station before trying again.</string>
+    <string name="calibration_sensor_error">The station reported a sensor error. Check the plates before trying again.</string>
     <string name="calibration_ready_to_save">Calibration is ready. Save the item to keep this range.</string>
     <string name="calibration_invalid_reading">The station sent an invalid reading. Waiting for the next update.</string>
     <string name="save">Save</string>
@@ -146,4 +139,6 @@
     <string name="ambiguous_match_title">Which item is on plate %1$d?</string>
     <string name="ambiguous_match_message">The %1$.1f g reading matches more than one saved item.</string>
     <string name="ambiguous_match_not_sure">Not sure</string>
+    <string name="calibration_place_item">Leave only this item on one plate while the app checks the station.</string>
+    <string name="calibration_multiple_plates_changed">More than one plate is occupied. Remove the other items and try again.</string>
 </resources>

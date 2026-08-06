@@ -8,7 +8,6 @@ import android.os.Bundle;
 import android.text.TextUtils;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -37,6 +36,9 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
                     CALIBRATION_STABILITY_GRAMS,
                     CALIBRATION_RANGE_MARGIN_GRAMS
             );
+    private final CalibrationPlateDetector plateDetector =
+            new CalibrationPlateDetector(PLATE_COUNT);
+    private boolean detectingPlate;
     private String editingItemId; // null when creating a new item
     private ItemProfile editingProfile; // null when creating a new item
     private Double pendingMinimumWeight;
@@ -46,7 +48,6 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
     private EditText itemNameInput;
     private TextView calibrationStatus;
     private TextView calibrationMessage;
-    private Spinner calibrationPlate;
     private Button calibrationButton;
 
     public static Intent newIntentForAdd(Context context) {
@@ -71,7 +72,6 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
         itemNameInput = findViewById(R.id.itemNameInput);
         calibrationStatus = findViewById(R.id.calibrationStatus);
         calibrationMessage = findViewById(R.id.calibrationMessage);
-        calibrationPlate = findViewById(R.id.calibrationPlate);
         calibrationButton = findViewById(R.id.calibrationButton);
         Button saveButton = findViewById(R.id.saveButton);
         Button cancelButton = findViewById(R.id.cancelButton);
@@ -99,6 +99,7 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
         if (calibrationCollector.isActive()) {
             calibrationCollector.cancel();
         }
+        detectingPlate = false;
         super.onPause();
     }
 
@@ -176,20 +177,21 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
     }
 
     private void startCalibration() {
-        int plateNumber = calibrationPlate.getSelectedItemPosition() + 1;
-        calibrationCollector.start(plateNumber);
-        calibrationMessage.setText(
-                getString(
-                        R.string.calibration_collecting_format,
-                        plateNumber,
-                        0,
-                        CALIBRATION_SAMPLE_COUNT
-                )
-        );
+        if (calibrationCollector.isActive()) {
+            calibrationCollector.cancel();
+        }
+        plateDetector.reset();
+        detectingPlate = true;
+        calibrationMessage.setText(R.string.calibration_place_item);
         calibrationButton.setText(R.string.calibration_restart);
     }
 
     private void handleCalibrationReading(BluetoothReading reading) {
+        if (detectingPlate) {
+            handlePlateDetection(reading);
+            return;
+        }
+
         CalibrationSampleCollector.Update update = calibrationCollector.add(reading);
         switch (update.getStatus()) {
             case IGNORED:
@@ -233,6 +235,32 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
         }
     }
 
+    private void handlePlateDetection(BluetoothReading reading) {
+        CalibrationPlateDetector.Result result = plateDetector.observe(reading);
+        switch (result.getOutcome()) {
+            case WAITING:
+                return;
+            case AMBIGUOUS:
+                calibrationMessage.setText(R.string.calibration_multiple_plates_changed);
+                return;
+            case SENSOR_ERROR:
+                calibrationMessage.setText(R.string.calibration_sensor_error);
+                return;
+            case DETECTED:
+                int plateNumber = result.getDetectedPlate();
+                detectingPlate = false;
+                calibrationCollector.start(plateNumber);
+                calibrationMessage.setText(
+                        getString(
+                                R.string.calibration_collecting_format,
+                                plateNumber,
+                                0,
+                                CALIBRATION_SAMPLE_COUNT
+                        )
+                );
+        }
+    }
+
     private void applyPendingCalibration(ItemProfile profile) {
         if (pendingMinimumWeight != null && pendingMaximumWeight != null) {
             profile.setWeightRange(pendingMinimumWeight, pendingMaximumWeight);
@@ -242,12 +270,12 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
     private void renderCalibrationAvailability(WeightStationConnection.State state) {
         boolean connected = state == WeightStationConnection.State.CONNECTED;
         calibrationButton.setEnabled(connected);
-        calibrationPlate.setEnabled(connected);
 
         if (!connected) {
             if (calibrationCollector.isActive()) {
                 calibrationCollector.cancel();
             }
+            detectingPlate = false;
             calibrationButton.setText(R.string.calibration_start);
             calibrationMessage.setText(
                     pendingMinimumWeight == null
@@ -257,7 +285,7 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
         } else if (pendingMinimumWeight != null) {
             calibrationButton.setText(R.string.calibration_again);
             calibrationMessage.setText(R.string.calibration_ready_to_save);
-        } else if (!calibrationCollector.isActive()) {
+        } else if (!calibrationCollector.isActive() && !detectingPlate) {
             calibrationButton.setText(R.string.calibration_start);
             calibrationMessage.setText(R.string.calibration_instructions);
         }
@@ -281,7 +309,7 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
     @Override
     public void onInvalidPayload() {
         runOnUiThread(() -> {
-            if (calibrationCollector.isActive()) {
+            if (detectingPlate || calibrationCollector.isActive()) {
                 calibrationMessage.setText(R.string.calibration_invalid_reading);
             }
         });
