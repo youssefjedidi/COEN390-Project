@@ -26,7 +26,6 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
     private static final int CALIBRATION_SAMPLE_COUNT = 5;
     private static final double CALIBRATION_STABILITY_GRAMS = 5.0;
     private static final double CALIBRATION_RANGE_MARGIN_GRAMS = 5.0;
-    private static final double CALIBRATION_DETECTION_THRESHOLD_GRAMS = 15.0;
 
     private ItemProfileRepository repository;
     private StationConnectionManager connectionManager;
@@ -38,7 +37,7 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
                     CALIBRATION_RANGE_MARGIN_GRAMS
             );
     private final CalibrationPlateDetector plateDetector =
-            new CalibrationPlateDetector(PLATE_COUNT, CALIBRATION_DETECTION_THRESHOLD_GRAMS);
+            new CalibrationPlateDetector(PLATE_COUNT);
     private boolean detectingPlate;
     private String editingItemId; // null when creating a new item
     private ItemProfile editingProfile; // null when creating a new item
@@ -178,6 +177,9 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
     }
 
     private void startCalibration() {
+        if (calibrationCollector.isActive()) {
+            calibrationCollector.cancel();
+        }
         plateDetector.reset();
         detectingPlate = true;
         calibrationMessage.setText(R.string.calibration_place_item);
@@ -237,7 +239,6 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
         CalibrationPlateDetector.Result result = plateDetector.observe(reading);
         switch (result.getOutcome()) {
             case WAITING:
-                calibrationMessage.setText(R.string.calibration_place_item);
                 return;
             case AMBIGUOUS:
                 calibrationMessage.setText(R.string.calibration_multiple_plates_changed);
@@ -289,6 +290,7 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
             calibrationMessage.setText(R.string.calibration_instructions);
         }
     }
+
     @Override
     public void onStateChanged(
             WeightStationConnection.State state,
@@ -307,7 +309,7 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
     @Override
     public void onInvalidPayload() {
         runOnUiThread(() -> {
-            if (calibrationCollector.isActive()) {
+            if (detectingPlate || calibrationCollector.isActive()) {
                 calibrationMessage.setText(R.string.calibration_invalid_reading);
             }
         });
