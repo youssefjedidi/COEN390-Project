@@ -146,4 +146,6 @@
     <string name="ambiguous_match_title">Which item is on plate %1$d?</string>
     <string name="ambiguous_match_message">The %1$.1f g reading matches more than one saved item.</string>
     <string name="ambiguous_match_not_sure">Not sure</string>
+    <string name="calibration_place_item">Place the item on an empty plate\u2026</string>
+    <string name="calibration_multiple_plates_changed">Multiple plates changed. Please leave the item on only one plate.</string>
 </resources>
