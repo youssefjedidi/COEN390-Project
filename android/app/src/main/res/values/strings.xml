@@ -62,12 +62,14 @@
     <string name="tracked_item_count_format">%1$d of %2$d</string>
     <string name="dashboard_data_waiting">Waiting for a complete set of plate readings</string>
     <string name="dashboard_data_live">Live data \u00b7 updated %1$s</string>
-    <string name="dashboard_data_cached">Cached data \u00b7 last synced %1$s</string>
+    <string name="dashboard_data_cached">Last state before disconnect \u00b7 saved %1$s</string>
     <string name="no_tracked_items_title">No tracked items</string>
     <string name="no_tracked_items_detail">Add an item to begin setting up the station.</string>
     <string name="item_status_present">Present</string>
     <string name="item_status_missing">Missing</string>
     <string name="item_status_unknown">Unknown</string>
+    <string name="item_status_still_on_tray">Still on tray</string>
+    <string name="item_status_not_on_tray">Not on tray</string>
     <string name="item_detail_plate">Detected on plate %1$d</string>
     <string name="item_detail_missing">Not detected on any plate</string>
     <string name="item_detail_waiting">Waiting for a stable station reading</string>

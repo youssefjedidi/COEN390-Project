@@ -13,6 +13,8 @@
     <color name="status_offline_text">#925A12</color>
     <color name="status_missing_background">#FDECEC</color>
     <color name="status_missing_text">#A33A3A</color>
+    <color name="status_neutral_background">#EEF1F5</color>
+    <color name="status_neutral_text">#4B5563</color>
     <color name="text_primary">#1F2937</color>
     <color name="text_secondary">#5F6B7A</color>
     <color name="button_primary_background">#176B87</color>
