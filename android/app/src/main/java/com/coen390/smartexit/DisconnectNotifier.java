@@ -31,7 +31,7 @@ final class DisconnectNotifier {
             return;
         }
 
-        createChannel();
+        ensureChannel();
         String names = String.join(", ", itemNames);
         String message = appContext.getResources().getQuantityString(
                 R.plurals.disconnect_notification_message,
@@ -66,7 +66,10 @@ final class DisconnectNotifier {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
-    private void createChannel() {
+    void ensureChannel() {
+        if (notificationManager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return;
+        }
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 appContext.getString(R.string.disconnect_notification_channel),
