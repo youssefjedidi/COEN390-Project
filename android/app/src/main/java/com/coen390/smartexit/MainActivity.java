@@ -458,8 +458,9 @@ public class MainActivity extends Activity {
             return;
         }
 
-        renderDashboard(selectedSnapshot.restore(visibleProfiles));
-        if (selectedSnapshot == cachedSnapshot) {
+        boolean cachedSnapshotSelected = selectedSnapshot == cachedSnapshot;
+        renderDashboard(selectedSnapshot.restore(visibleProfiles), cachedSnapshotSelected);
+        if (cachedSnapshotSelected) {
             showCachedDashboardTime(selectedSnapshot.getTimestampMillis());
         } else {
             showLiveDashboardTime(selectedSnapshot.getTimestampMillis());
@@ -467,11 +468,11 @@ public class MainActivity extends Activity {
     }
 
     private void showWaitingDashboard() {
-        renderDashboard(dashboardStateCoordinator.getStates());
+        renderDashboard(dashboardStateCoordinator.getStates(), false);
         dashboardDataStatus.setText(R.string.dashboard_data_waiting);
     }
 
-    private void renderDashboard(List<TrackedItemState> states) {
+    private void renderDashboard(List<TrackedItemState> states, boolean cachedSnapshot) {
         int visibleCount = Math.min(states.size(), MAX_DASHBOARD_ITEMS);
         trackedItemCount.setText(
                 getString(
@@ -494,32 +495,52 @@ public class MainActivity extends Activity {
             }
 
             itemRows[index].setVisibility(View.VISIBLE);
-            renderDashboardItem(index, states.get(index));
+            renderDashboardItem(index, states.get(index), cachedSnapshot);
         }
     }
+
     private void openItemDetails(int index) {
         String itemId = currentItemIds[index];
         if (itemId != null) {
             startActivity(AddEditItemActivity.newIntentForEdit(this, itemId));
         }
     }
-    private void renderDashboardItem(int index, TrackedItemState state) {
+
+    private void renderDashboardItem(
+            int index,
+            TrackedItemState state,
+            boolean cachedSnapshot
+    ) {
+        DashboardItemDisplayState displayState =
+                DashboardItemDisplayState.from(state.getStatus(), cachedSnapshot);
         currentItemIds[index] = state.getItem().getId();
         itemNames[index].setText(state.getItem().getName());
-        itemStatuses[index].setText(itemStatusText(state.getStatus()));
+        itemStatuses[index].setText(itemStatusText(displayState));
         itemDetails[index].setText(itemDetailText(state));
 
-        if (state.getStatus() == TrackedItemStatus.PRESENT) {
+        if (displayState == DashboardItemDisplayState.PRESENT) {
             styleItemStatus(
                     itemStatuses[index],
                     R.drawable.status_connected_background,
                     R.color.status_connected_text
             );
-        } else if (state.getStatus() == TrackedItemStatus.MISSING) {
+        } else if (displayState == DashboardItemDisplayState.MISSING) {
             styleItemStatus(
                     itemStatuses[index],
                     R.drawable.status_missing_background,
                     R.color.status_missing_text
+            );
+        } else if (displayState == DashboardItemDisplayState.STILL_ON_TRAY) {
+            styleItemStatus(
+                    itemStatuses[index],
+                    R.drawable.status_offline_background,
+                    R.color.status_offline_text
+            );
+        } else if (displayState == DashboardItemDisplayState.NOT_ON_TRAY) {
+            styleItemStatus(
+                    itemStatuses[index],
+                    R.drawable.status_neutral_background,
+                    R.color.status_neutral_text
             );
         } else {
             styleItemStatus(
@@ -530,12 +551,18 @@ public class MainActivity extends Activity {
         }
     }
 
-    private int itemStatusText(TrackedItemStatus status) {
-        if (status == TrackedItemStatus.PRESENT) {
+    private int itemStatusText(DashboardItemDisplayState status) {
+        if (status == DashboardItemDisplayState.PRESENT) {
             return R.string.item_status_present;
         }
-        if (status == TrackedItemStatus.MISSING) {
+        if (status == DashboardItemDisplayState.MISSING) {
             return R.string.item_status_missing;
+        }
+        if (status == DashboardItemDisplayState.STILL_ON_TRAY) {
+            return R.string.item_status_still_on_tray;
+        }
+        if (status == DashboardItemDisplayState.NOT_ON_TRAY) {
+            return R.string.item_status_not_on_tray;
         }
         return R.string.item_status_unknown;
     }
@@ -614,7 +641,7 @@ public class MainActivity extends Activity {
         showDisconnectSnapshot = false;
         long timestampMillis = System.currentTimeMillis();
         connectionManager.recordDashboardStates(states, timestampMillis);
-        renderDashboard(states);
+        renderDashboard(states, false);
         showLiveDashboardTime(timestampMillis);
         showNextAmbiguousMatch();
     }
@@ -676,7 +703,7 @@ public class MainActivity extends Activity {
         ambiguousDialogVisible = false;
         long timestampMillis = System.currentTimeMillis();
         connectionManager.recordDashboardStates(states, timestampMillis);
-        renderDashboard(states);
+        renderDashboard(states, false);
         showLiveDashboardTime(timestampMillis);
         showNextAmbiguousMatch();
     }
@@ -696,7 +723,7 @@ public class MainActivity extends Activity {
     private void showSavedDisconnectSnapshot() {
         DisconnectSnapshot snapshot = disconnectSnapshotRepository.load();
         if (snapshot != null) {
-            renderDashboard(snapshot.restore(visibleProfiles));
+            renderDashboard(snapshot.restore(visibleProfiles), true);
             showCachedDashboardTime(snapshot.getTimestampMillis());
         }
     }
