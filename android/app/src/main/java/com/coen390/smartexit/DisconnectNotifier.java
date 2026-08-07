@@ -27,7 +27,7 @@ final class DisconnectNotifier {
 
     void show(DisconnectSnapshot snapshot) {
         List<String> itemNames = snapshot.getPresentItemNames();
-        if (itemNames.isEmpty() || notificationManager == null || !hasPermission()) {
+        if (notificationManager == null || !shouldNotify(hasPermission(), itemNames)) {
             return;
         }
 
@@ -58,6 +58,10 @@ final class DisconnectNotifier {
                 .setCategory(Notification.CATEGORY_REMINDER)
                 .build();
         notificationManager.notify(NOTIFICATION_ID, notification);
+    }
+
+    static boolean shouldNotify(boolean permissionGranted, List<String> itemNames) {
+        return permissionGranted && !itemNames.isEmpty();
     }
 
     private boolean hasPermission() {

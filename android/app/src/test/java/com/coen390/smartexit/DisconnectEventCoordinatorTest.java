@@ -107,4 +107,24 @@ public class DisconnectEventCoordinatorTest {
 
         assertTrue(snapshot.getPresentItemNames().isEmpty());
     }
+
+    @Test
+    public void snapshotKeepsEveryPresentItemForOneNotification() {
+        DisconnectEventCoordinator coordinator = new DisconnectEventCoordinator();
+        DisconnectSnapshot latestSnapshot = DisconnectSnapshot.from(
+                100L,
+                Arrays.asList(
+                        TrackedItemState.present(keys, 1),
+                        TrackedItemState.present(wallet, 4)
+                )
+        );
+
+        coordinator.onStateChanged(WeightStationConnection.State.CONNECTED, null);
+        DisconnectSnapshot snapshot = coordinator.onStateChanged(
+                WeightStationConnection.State.DISCONNECTED,
+                latestSnapshot
+        ).get();
+
+        assertEquals(Arrays.asList("Keys", "Wallet"), snapshot.getPresentItemNames());
+    }
 }
