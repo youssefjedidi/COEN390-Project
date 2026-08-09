@@ -3,6 +3,8 @@ package com.coen390.smartexit;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -13,10 +15,18 @@ final class StationConnectionManager implements WeightStationConnection.Listener
         void onDashboardUpdated(DisconnectSnapshot snapshot);
     }
 
+    interface MonitoringListener {
+        void onMonitoringStateChanged(
+                MonitoringLifecycle.State state,
+                MonitoringLifecycle.PauseReason pauseReason
+        );
+    }
+
     private static final int PLATE_COUNT = 4;
     private static final int REQUIRED_STABLE_SAMPLES = 3;
     private static final double STABILITY_TOLERANCE_GRAMS = 5.0;
     private static final double EMPTY_WEIGHT_THRESHOLD_GRAMS = 5.0;
+    private static final long DEPARTURE_GRACE_PERIOD_MS = 10_000L;
 
     private static StationConnectionManager instance;
 
@@ -32,9 +42,13 @@ final class StationConnectionManager implements WeightStationConnection.Listener
             new CopyOnWriteArrayList<>();
     private final List<DashboardListener> dashboardListeners =
             new CopyOnWriteArrayList<>();
+    private final List<MonitoringListener> monitoringListeners =
+            new CopyOnWriteArrayList<>();
     private final DisconnectSnapshotRepository disconnectSnapshotRepository;
     private final StationReadingProcessor readingProcessor;
     private final StationMonitoringPreferences monitoringPreferences;
+    private final MonitoringLifecycle monitoringLifecycle = new MonitoringLifecycle();
+    private final DepartureReminderCoordinator departureReminder;
     private WeightStationConnection connection;
     private DisconnectSnapshot latestDashboardSnapshot;
 
@@ -42,6 +56,13 @@ final class StationConnectionManager implements WeightStationConnection.Listener
         this.appContext = appContext;
         disconnectSnapshotRepository = new DisconnectSnapshotRepository(appContext);
         monitoringPreferences = new StationMonitoringPreferences(appContext);
+        DisconnectNotifier disconnectNotifier = new DisconnectNotifier(appContext);
+        departureReminder = new DepartureReminderCoordinator(
+                DEPARTURE_GRACE_PERIOD_MS,
+                new HandlerScheduler(new Handler(Looper.getMainLooper())),
+                disconnectSnapshotRepository::save,
+                disconnectNotifier::show
+        );
         readingProcessor = new StationReadingProcessor(
                 new ItemProfileRepository(appContext).getAll(),
                 PLATE_COUNT,
@@ -77,8 +98,22 @@ final class StationConnectionManager implements WeightStationConnection.Listener
     }
 
     void connect() {
+        monitoringPreferences.setMonitoringEnabled(true);
+        if (getState() == WeightStationConnection.State.CONNECTED) {
+            monitoringLifecycle.connected();
+            notifyMonitoringListeners();
+            return;
+        }
+        monitoringLifecycle.start();
+        notifyMonitoringListeners();
+        connectToStation();
+    }
+
+    private void connectToStation() {
         WeightStationConnection conn = getOrCreateConnection();
         if (conn == null) {
+            monitoringLifecycle.pause(MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE);
+            notifyMonitoringListeners();
             return;
         }
 
@@ -92,6 +127,9 @@ final class StationConnectionManager implements WeightStationConnection.Listener
 
     void disconnect() {
         monitoringPreferences.setMonitoringEnabled(false);
+        monitoringLifecycle.disconnect(MonitoringLifecycle.DisconnectCause.MANUAL_STOP);
+        departureReminder.cancelDeparture();
+        notifyMonitoringListeners();
         if (connection != null) {
             connection.disconnect();
         }
@@ -111,10 +149,34 @@ final class StationConnectionManager implements WeightStationConnection.Listener
 
     /** Fully tears down the connection, e.g. when permissions/BLE support are lost. */
     void reset() {
+        pauseMonitoring(MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE);
+    }
+
+    void pauseMonitoring(MonitoringLifecycle.PauseReason reason) {
+        monitoringLifecycle.pause(reason);
+        departureReminder.cancelDeparture();
         if (connection != null) {
             connection.close();
             connection = null;
         }
+        notifyMonitoringListeners();
+    }
+
+    void resumeMonitoring() {
+        if (!monitoringPreferences.isMonitoringEnabled()) {
+            return;
+        }
+        monitoringLifecycle.resume();
+        notifyMonitoringListeners();
+        connectToStation();
+    }
+
+    MonitoringLifecycle.State getMonitoringState() {
+        return monitoringLifecycle.getState();
+    }
+
+    MonitoringLifecycle.PauseReason getMonitoringPauseReason() {
+        return monitoringLifecycle.getPauseReason();
     }
 
     void refreshProfiles(List<ItemProfile> profiles) {
@@ -139,6 +201,14 @@ final class StationConnectionManager implements WeightStationConnection.Listener
 
     void removeDashboardListener(DashboardListener listener) {
         dashboardListeners.remove(listener);
+    }
+
+    void addMonitoringListener(MonitoringListener listener) {
+        monitoringListeners.add(listener);
+    }
+
+    void removeMonitoringListener(MonitoringListener listener) {
+        monitoringListeners.remove(listener);
     }
 
     List<RecognitionResult> getPendingAmbiguousResults() {
@@ -178,6 +248,8 @@ final class StationConnectionManager implements WeightStationConnection.Listener
                 monitoringPreferences.rememberStation(address);
                 monitoringPreferences.setMonitoringEnabled(true);
             }
+            monitoringLifecycle.connected();
+            departureReminder.onReconnected();
         }
         for (WeightStationConnection.Listener listener : listeners) {
             listener.onStateChanged(state, failure);
@@ -185,8 +257,18 @@ final class StationConnectionManager implements WeightStationConnection.Listener
 
         if (state == WeightStationConnection.State.DISCONNECTED
                 && monitoringPreferences.isMonitoringEnabled()) {
-            connect();
+            if (monitoringLifecycle.disconnect(
+                    MonitoringLifecycle.DisconnectCause.LINK_LOSS
+            )) {
+                departureReminder.onLinkLost();
+            }
+            connectToStation();
+        } else if (state == WeightStationConnection.State.FAILED
+                && monitoringPreferences.isMonitoringEnabled()) {
+            monitoringLifecycle.pause(MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE);
+            departureReminder.cancelDeparture();
         }
+        notifyMonitoringListeners();
     }
 
     @Override
@@ -211,8 +293,42 @@ final class StationConnectionManager implements WeightStationConnection.Listener
             latestDashboardSnapshot = snapshot;
         }
         disconnectSnapshotRepository.save(snapshot);
+        departureReminder.onFreshSnapshot(snapshot);
         for (DashboardListener listener : dashboardListeners) {
             listener.onDashboardUpdated(snapshot);
+        }
+    }
+
+    private void notifyMonitoringListeners() {
+        MonitoringLifecycle.State state = monitoringLifecycle.getState();
+        MonitoringLifecycle.PauseReason reason = monitoringLifecycle.getPauseReason();
+        for (MonitoringListener listener : monitoringListeners) {
+            listener.onMonitoringStateChanged(state, reason);
+        }
+    }
+
+    private static final class HandlerScheduler
+            implements DepartureReminderCoordinator.Scheduler {
+        private final Handler handler;
+        private Runnable pendingTask;
+
+        private HandlerScheduler(Handler handler) {
+            this.handler = handler;
+        }
+
+        @Override
+        public void schedule(Runnable task, long delayMillis) {
+            cancel();
+            pendingTask = task;
+            handler.postDelayed(task, delayMillis);
+        }
+
+        @Override
+        public void cancel() {
+            if (pendingTask != null) {
+                handler.removeCallbacks(pendingTask);
+                pendingTask = null;
+            }
         }
     }
 }
