@@ -162,10 +162,7 @@ public class MainActivity extends Activity {
             return;
         }
 
-        MonitoringLifecycle.State state = connectionManager.getMonitoringState();
-        if (state == MonitoringLifecycle.State.STARTING
-                || state == MonitoringLifecycle.State.MONITORING
-                || state == MonitoringLifecycle.State.RECONNECTING) {
+        if (connectionManager.isMonitoringEnabled()) {
             StationMonitoringService.stop(this);
         } else {
             StationMonitoringService.start(this);
