@@ -62,11 +62,11 @@
     <string name="calibration_restart">Restart calibration</string>
     <string name="calibration_again">Calibrate again</string>
     <string name="calibration_station_required">Connect the station before calibrating an item.</string>
-    <string name="calibration_instructions">Leave only this item on the station. The app will detect which plate holds it.</string>
+    <string name="calibration_instructions">Remove all other items from the station. Leave only the item you want to save on one tray.</string>
     <string name="calibration_collecting_format">Plate %1$d: collecting stable readings (%2$d of %3$d)</string>
     <string name="calibration_waiting_for_item">Place the item on plate %1$d.</string>
     <string name="calibration_waiting_for_stable">Hold the item still while the reading settles.</string>
-    <string name="calibration_sensor_error">The station reported a sensor error. Check the plates before trying again.</string>
+    <string name="calibration_sensor_error">The station could not read this item. Remove excess weight and check the plates before trying again.</string>
     <string name="calibration_ready_to_save">Calibration is ready. Save the item to keep this range.</string>
     <string name="calibration_invalid_reading">The station sent an invalid reading. Waiting for the next update.</string>
     <string name="save">Save</string>
@@ -130,6 +130,6 @@
     </plurals>
     <string name="ambiguous_match_title">Which item is on plate %1$d?</string>
     <string name="ambiguous_match_not_sure">Not sure</string>
-    <string name="calibration_place_item">Leave only this item on one plate while the app checks the station.</string>
-    <string name="calibration_multiple_plates_changed">More than one plate is occupied. Remove the other items and try again.</string>
+    <string name="calibration_place_item">Remove all other items from the station. Leave only the item you want to save on one tray.</string>
+    <string name="calibration_multiple_plates_changed">More than one tray has an item on it. Remove the other items and leave only this one. If the other trays are already empty, use Zero all scales in Settings.</string>
 </resources>

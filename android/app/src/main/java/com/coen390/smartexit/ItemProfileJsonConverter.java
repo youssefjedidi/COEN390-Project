@@ -28,7 +28,11 @@ public final class ItemProfileJsonConverter {
         try {
             JSONArray array = new JSONArray(json);
             for (int i = 0; i < array.length(); i++) {
-                result.add(profileFromJson(array.getJSONObject(i)));
+                try {
+                    result.add(profileFromJson(array.getJSONObject(i)));
+                } catch (JSONException | IllegalArgumentException ignored) {
+                    // Keep the remaining profiles usable if one saved entry is damaged.
+                }
             }
         } catch (JSONException e) {
             return new ArrayList<>();

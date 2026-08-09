@@ -462,6 +462,7 @@ public class MainActivity extends Activity {
     private void renderDashboard(List<TrackedItemState> states, boolean cachedSnapshot) {
         int visibleCount = Math.min(states.size(), MAX_DASHBOARD_ITEMS);
         dashboardEmptyState.setVisibility(visibleCount == 0 ? View.VISIBLE : View.GONE);
+        dashboardDataStatus.setVisibility(visibleCount == 0 ? View.GONE : View.VISIBLE);
         dashboardItemGrid.setVisibility(visibleCount == 0 ? View.GONE : View.VISIBLE);
         dashboardGridSecondRow.setVisibility(
                 visibleCount > 2 ? View.VISIBLE : View.GONE

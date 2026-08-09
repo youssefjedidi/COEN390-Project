@@ -59,6 +59,21 @@ public class ItemProfileJsonConverterTest {
     }
 
     @Test
+    public void invalidSavedProfile_doesNotHideValidProfiles() {
+        String json = "["
+                + "{\"id\":\"keys\",\"name\":\"Keys\","
+                + "\"minWeightGrams\":35.0,\"maxWeightGrams\":45.0},"
+                + "{\"id\":\"broken\",\"name\":\"Broken\","
+                + "\"minWeightGrams\":80.0,\"maxWeightGrams\":20.0}"
+                + "]";
+
+        List<ItemProfile> result = ItemProfileJsonConverter.fromJson(json);
+
+        assertEquals(1, result.size());
+        assertEquals("Keys", result.get(0).getName());
+    }
+
+    @Test
     public void nullOrBlankJson_returnsEmptyList() {
         assertTrue(ItemProfileJsonConverter.fromJson(null).isEmpty());
         assertTrue(ItemProfileJsonConverter.fromJson("").isEmpty());
