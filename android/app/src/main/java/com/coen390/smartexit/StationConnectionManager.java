@@ -1,14 +1,33 @@
 package com.coen390.smartexit;
 
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 final class StationConnectionManager implements WeightStationConnection.Listener {
+
+    interface DashboardListener {
+        void onDashboardUpdated(DisconnectSnapshot snapshot);
+    }
+
+    interface MonitoringListener {
+        void onMonitoringStateChanged(
+                MonitoringLifecycle.State state,
+                MonitoringLifecycle.PauseReason pauseReason
+        );
+    }
+
+    private static final int PLATE_COUNT = 4;
+    private static final int REQUIRED_STABLE_SAMPLES = 3;
+    private static final double STABILITY_TOLERANCE_GRAMS = 5.0;
+    private static final double EMPTY_WEIGHT_THRESHOLD_GRAMS = 5.0;
+    private static final long DEPARTURE_GRACE_PERIOD_MS = 10_000L;
 
     private static StationConnectionManager instance;
 
@@ -22,24 +41,43 @@ final class StationConnectionManager implements WeightStationConnection.Listener
     private final Context appContext;
     private final List<WeightStationConnection.Listener> listeners =
             new CopyOnWriteArrayList<>();
-    private final DisconnectEventCoordinator disconnectEventCoordinator =
-            new DisconnectEventCoordinator();
+    private final List<DashboardListener> dashboardListeners =
+            new CopyOnWriteArrayList<>();
+    private final List<MonitoringListener> monitoringListeners =
+            new CopyOnWriteArrayList<>();
     private final DisconnectSnapshotRepository disconnectSnapshotRepository;
-    private final DisconnectNotifier disconnectNotifier;
+    private final StationReadingProcessor readingProcessor;
+    private final StationMonitoringPreferences monitoringPreferences;
+    private final MonitoringLifecycle monitoringLifecycle = new MonitoringLifecycle();
+    private final DepartureReminderCoordinator departureReminder;
     private WeightStationConnection connection;
     private DisconnectSnapshot latestDashboardSnapshot;
 
     private StationConnectionManager(Context appContext) {
         this.appContext = appContext;
         disconnectSnapshotRepository = new DisconnectSnapshotRepository(appContext);
-        disconnectNotifier = new DisconnectNotifier(appContext);
+        monitoringPreferences = new StationMonitoringPreferences(appContext);
+        DisconnectNotifier disconnectNotifier = new DisconnectNotifier(appContext);
+        departureReminder = new DepartureReminderCoordinator(
+                DEPARTURE_GRACE_PERIOD_MS,
+                new HandlerScheduler(new Handler(Looper.getMainLooper())),
+                disconnectSnapshotRepository::save,
+                disconnectNotifier::show
+        );
+        readingProcessor = new StationReadingProcessor(
+                new ItemProfileRepository(appContext).getAll(),
+                PLATE_COUNT,
+                REQUIRED_STABLE_SAMPLES,
+                STABILITY_TOLERANCE_GRAMS,
+                EMPTY_WEIGHT_THRESHOLD_GRAMS
+        );
     }
 
     /**
      * Returns the shared connection, creating it if needed. Returns null if
      * a BluetoothAdapter isn't available on this device (BLE unsupported).
      */
-    WeightStationConnection getOrCreateConnection() {
+    private WeightStationConnection getOrCreateConnection() {
         if (connection == null) {
             BluetoothAdapter adapter = getBluetoothAdapter();
             if (adapter == null) {
@@ -60,14 +98,41 @@ final class StationConnectionManager implements WeightStationConnection.Listener
         return connection == null ? null : connection.getFailure();
     }
 
-    void connect() {
-        WeightStationConnection conn = getOrCreateConnection();
-        if (conn != null) {
-            conn.connect();
+    void startMonitoring() {
+        monitoringPreferences.setMonitoringEnabled(true);
+        if (getState() == WeightStationConnection.State.CONNECTED) {
+            monitoringLifecycle.connected();
+            notifyMonitoringListeners();
+            return;
+        }
+        clearLiveDashboardSnapshot();
+        monitoringLifecycle.start();
+        notifyMonitoringListeners();
+        connectToStation();
+    }
+
+    private void connectToStation() {
+        WeightStationConnection stationConnection = getOrCreateConnection();
+        if (stationConnection == null) {
+            monitoringLifecycle.pause(MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE);
+            notifyMonitoringListeners();
+            return;
+        }
+
+        String knownAddress = monitoringPreferences.getKnownStationAddress();
+        if (knownAddress == null) {
+            stationConnection.connect();
+        } else {
+            stationConnection.connectKnown(knownAddress);
         }
     }
 
-    void disconnect() {
+    void stopMonitoring() {
+        monitoringPreferences.setMonitoringEnabled(false);
+        clearLiveDashboardSnapshot();
+        monitoringLifecycle.disconnect(MonitoringLifecycle.DisconnectCause.MANUAL_STOP);
+        departureReminder.cancelDeparture();
+        notifyMonitoringListeners();
         if (connection != null) {
             connection.disconnect();
         }
@@ -86,19 +151,35 @@ final class StationConnectionManager implements WeightStationConnection.Listener
     }
 
     /** Fully tears down the connection, e.g. when permissions/BLE support are lost. */
-    void reset() {
+    void pauseMonitoring(MonitoringLifecycle.PauseReason reason) {
+        if (monitoringLifecycle.getState() == MonitoringLifecycle.State.PAUSED
+                && monitoringLifecycle.getPauseReason() == reason) {
+            return;
+        }
+        clearLiveDashboardSnapshot();
+        monitoringLifecycle.pause(reason);
+        departureReminder.cancelDeparture();
         if (connection != null) {
-            saveDisconnectSnapshot(WeightStationConnection.State.DISCONNECTED);
             connection.close();
             connection = null;
         }
+        notifyMonitoringListeners();
     }
 
-    synchronized void recordDashboardStates(
-            List<TrackedItemState> states,
-            long timestampMillis
-    ) {
-        latestDashboardSnapshot = DisconnectSnapshot.from(timestampMillis, states);
+    MonitoringLifecycle.State getMonitoringState() {
+        return monitoringLifecycle.getState();
+    }
+
+    MonitoringLifecycle.PauseReason getMonitoringPauseReason() {
+        return monitoringLifecycle.getPauseReason();
+    }
+
+    boolean isMonitoringEnabled() {
+        return monitoringPreferences.isMonitoringEnabled();
+    }
+
+    void refreshProfiles(List<ItemProfile> profiles) {
+        readingProcessor.replaceProfiles(profiles);
     }
 
     synchronized DisconnectSnapshot getLatestDashboardSnapshot() {
@@ -113,6 +194,45 @@ final class StationConnectionManager implements WeightStationConnection.Listener
         listeners.remove(listener);
     }
 
+    void addDashboardListener(DashboardListener listener) {
+        dashboardListeners.add(listener);
+    }
+
+    void removeDashboardListener(DashboardListener listener) {
+        dashboardListeners.remove(listener);
+    }
+
+    void addMonitoringListener(MonitoringListener listener) {
+        monitoringListeners.add(listener);
+    }
+
+    void removeMonitoringListener(MonitoringListener listener) {
+        monitoringListeners.remove(listener);
+    }
+
+    List<RecognitionResult> getPendingAmbiguousResults() {
+        return readingProcessor.getPendingAmbiguousResults();
+    }
+
+    void confirmAmbiguousMatch(int plateNumber, String itemId) {
+        publishDashboardSnapshot(
+                readingProcessor.confirmAmbiguousMatch(
+                        plateNumber,
+                        itemId,
+                        System.currentTimeMillis()
+                )
+        );
+    }
+
+    void leaveAmbiguousMatchUnresolved(int plateNumber) {
+        publishDashboardSnapshot(
+                readingProcessor.leaveAmbiguousMatchUnresolved(
+                        plateNumber,
+                        System.currentTimeMillis()
+                )
+        );
+    }
+
     private BluetoothAdapter getBluetoothAdapter() {
         BluetoothManager bluetoothManager =
                 (BluetoothManager) appContext.getSystemService(Context.BLUETOOTH_SERVICE);
@@ -120,15 +240,28 @@ final class StationConnectionManager implements WeightStationConnection.Listener
     }
 
     @Override
-    public void onStateChanged(WeightStationConnection.State state, WeightStationConnection.Failure failure) {
-        saveDisconnectSnapshot(state);
-        for (WeightStationConnection.Listener listener : listeners) {
-            listener.onStateChanged(state, failure);
+    public void onStateChanged(
+            WeightStationConnection.State state,
+            WeightStationConnection.Failure failure
+    ) {
+        if (state == WeightStationConnection.State.CONNECTED) {
+            handleStationConnected();
         }
+        notifyConnectionListeners(state, failure);
+
+        if (state == WeightStationConnection.State.DISCONNECTED) {
+            handleStationDisconnected();
+        } else if (state == WeightStationConnection.State.FAILED) {
+            handleConnectionFailure();
+        }
+        notifyMonitoringListeners();
     }
 
     @Override
     public void onReadingReceived(BluetoothReading reading) {
+        readingProcessor
+                .process(reading, System.currentTimeMillis())
+                .ifPresent(this::publishDashboardSnapshot);
         for (WeightStationConnection.Listener listener : listeners) {
             listener.onReadingReceived(reading);
         }
@@ -141,21 +274,128 @@ final class StationConnectionManager implements WeightStationConnection.Listener
         }
     }
 
-    private void saveDisconnectSnapshot(WeightStationConnection.State state) {
-        Optional<DisconnectSnapshot> snapshot;
+    private void publishDashboardSnapshot(DisconnectSnapshot snapshot) {
         synchronized (this) {
-            snapshot = disconnectEventCoordinator.onStateChanged(
-                    state,
-                    latestDashboardSnapshot
-            );
-            if (snapshot.isPresent()) {
-                latestDashboardSnapshot = null;
-            }
+            latestDashboardSnapshot = snapshot;
+        }
+        disconnectSnapshotRepository.save(snapshot);
+        departureReminder.onFreshSnapshot(snapshot);
+        for (DashboardListener listener : dashboardListeners) {
+            listener.onDashboardUpdated(snapshot);
+        }
+    }
+
+    private synchronized void clearLiveDashboardSnapshot() {
+        latestDashboardSnapshot = null;
+    }
+
+    private void handleStationConnected() {
+        readingProcessor.resetCycle();
+        clearLiveDashboardSnapshot();
+
+        String stationAddress = connection == null
+                ? null
+                : connection.getConnectedStationAddress();
+        if (stationAddress != null) {
+            monitoringPreferences.rememberStation(stationAddress);
+            monitoringPreferences.setMonitoringEnabled(true);
         }
 
-        if (snapshot.isPresent()) {
-            disconnectSnapshotRepository.save(snapshot.get());
-            disconnectNotifier.show(snapshot.get());
+        monitoringLifecycle.connected();
+        departureReminder.onReconnected();
+    }
+
+    private void handleStationDisconnected() {
+        if (!monitoringPreferences.isMonitoringEnabled()) {
+            return;
+        }
+
+        clearLiveDashboardSnapshot();
+        MonitoringLifecycle.DisconnectCause cause = getDisconnectCause();
+        if (monitoringLifecycle.disconnect(cause)) {
+            departureReminder.onLinkLost();
+        }
+
+        if (cause == MonitoringLifecycle.DisconnectCause.LINK_LOSS) {
+            connectToStation();
+        } else {
+            departureReminder.cancelDeparture();
+        }
+    }
+
+    private void handleConnectionFailure() {
+        if (!monitoringPreferences.isMonitoringEnabled()) {
+            return;
+        }
+
+        clearLiveDashboardSnapshot();
+        monitoringLifecycle.pause(getPauseReasonForCurrentAvailability());
+        departureReminder.cancelDeparture();
+    }
+
+    private void notifyConnectionListeners(
+            WeightStationConnection.State state,
+            WeightStationConnection.Failure failure
+    ) {
+        for (WeightStationConnection.Listener listener : listeners) {
+            listener.onStateChanged(state, failure);
+        }
+    }
+
+    private void notifyMonitoringListeners() {
+        MonitoringLifecycle.State state = monitoringLifecycle.getState();
+        MonitoringLifecycle.PauseReason reason = monitoringLifecycle.getPauseReason();
+        for (MonitoringListener listener : monitoringListeners) {
+            listener.onMonitoringStateChanged(state, reason);
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private MonitoringLifecycle.DisconnectCause getDisconnectCause() {
+        if (!BluetoothPermissionHelper.hasRequiredPermissions(appContext)) {
+            return MonitoringLifecycle.DisconnectCause.PERMISSION_UNAVAILABLE;
+        }
+        BluetoothAdapter adapter = getBluetoothAdapter();
+        if (adapter == null || !adapter.isEnabled()) {
+            return MonitoringLifecycle.DisconnectCause.BLUETOOTH_OFF;
+        }
+        return MonitoringLifecycle.DisconnectCause.LINK_LOSS;
+    }
+
+    @SuppressLint("MissingPermission")
+    private MonitoringLifecycle.PauseReason getPauseReasonForCurrentAvailability() {
+        if (!BluetoothPermissionHelper.hasRequiredPermissions(appContext)) {
+            return MonitoringLifecycle.PauseReason.PERMISSION_UNAVAILABLE;
+        }
+        BluetoothAdapter adapter = getBluetoothAdapter();
+        if (adapter == null || !adapter.isEnabled()) {
+            return MonitoringLifecycle.PauseReason.BLUETOOTH_OFF;
+        }
+        return MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE;
+    }
+
+    private static final class HandlerScheduler
+            implements DepartureReminderCoordinator.Scheduler {
+        private final Handler handler;
+        private Runnable pendingTask;
+
+        private HandlerScheduler(Handler handler) {
+            this.handler = handler;
+        }
+
+        @Override
+        public void schedule(Runnable task, long delayMillis) {
+            cancel();
+            pendingTask = task;
+            handler.postDelayed(task, delayMillis);
+        }
+
+        @Override
+        public void cancel() {
+            if (pendingTask != null) {
+                handler.removeCallbacks(pendingTask);
+                pendingTask = null;
+            }
         }
     }
 }

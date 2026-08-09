@@ -24,9 +24,6 @@ public class MainActivity extends Activity {
 
     private static final int BLUETOOTH_PERMISSION_REQUEST = 1001;
     private static final int MAX_DASHBOARD_ITEMS = 4;
-    private static final int REQUIRED_STABLE_SAMPLES = 3;
-    private static final double STABILITY_TOLERANCE_GRAMS = 5.0;
-    private static final double EMPTY_WEIGHT_THRESHOLD_GRAMS = 5.0;
 
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("h:mm a", Locale.getDefault());
 
@@ -43,13 +40,14 @@ public class MainActivity extends Activity {
     private TextView[] itemNames;
     private TextView[] itemStatuses;
     private TextView[] itemDetails;
-    private DashboardStateCoordinator dashboardStateCoordinator;
     private boolean ambiguousDialogVisible;
     private ItemProfileRepository itemProfileRepository;
     private DisconnectSnapshotRepository disconnectSnapshotRepository;
     private List<ItemProfile> visibleProfiles = new ArrayList<>();
     private StationConnectionManager connectionManager;
     private WeightStationConnection.Listener connectionListener;
+    private StationConnectionManager.DashboardListener dashboardListener;
+    private StationConnectionManager.MonitoringListener monitoringListener;
     private boolean showDisconnectSnapshot;
 
     static Intent newIntentForDisconnectSnapshot(Context context) {
@@ -80,12 +78,12 @@ public class MainActivity extends Activity {
                     WeightStationConnection.State state,
                     WeightStationConnection.Failure failure
             ) {
-                runOnUiThread(() -> handleConnectionState(state, failure));
+                runOnUiThread(() -> handleConnectionState(state));
             }
 
             @Override
             public void onReadingReceived(BluetoothReading reading) {
-                showBluetoothReading(reading);
+                // The shared manager processes readings even when this screen is not visible.
             }
 
             @Override
@@ -94,6 +92,12 @@ public class MainActivity extends Activity {
             }
         };
         connectionManager.addListener(connectionListener);
+        dashboardListener = snapshot -> runOnUiThread(() -> handleDashboardUpdate(snapshot));
+        connectionManager.addDashboardListener(dashboardListener);
+        monitoringListener = (state, reason) -> runOnUiThread(
+                () -> renderMonitoringState(state, reason)
+        );
+        connectionManager.addMonitoringListener(monitoringListener);
 
         addItemButton = findViewById(R.id.addItemButton);
         addItemButton.setOnClickListener(
@@ -124,6 +128,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         connectionManager.removeListener(connectionListener);
+        connectionManager.removeDashboardListener(dashboardListener);
+        connectionManager.removeMonitoringListener(monitoringListener);
         super.onDestroy();
     }
 
@@ -156,24 +162,16 @@ public class MainActivity extends Activity {
             return;
         }
 
-        WeightStationConnection connection = connectionManager.getOrCreateConnection();
-        if (connection == null) {
-            return;
-        }
-        WeightStationConnection.State state = connection.getState();
-
-        if (state == WeightStationConnection.State.SCANNING
-                || state == WeightStationConnection.State.CONNECTING
-                || state == WeightStationConnection.State.CONNECTED) {
-            connectionManager.disconnect();
+        if (connectionManager.isMonitoringEnabled()) {
+            StationMonitoringService.stopMonitoring(this);
         } else {
-            connectionManager.connect();
+            StationMonitoringService.startMonitoring(this);
         }
     }
 
     private void updateBluetoothReadiness() {
         if (!BluetoothPermissionHelper.supportsBle(this)) {
-            closeStationConnection();
+            pauseStationMonitoring(MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE);
             showBluetoothSetupState(
                     R.string.station_ble_unsupported,
                     R.string.reading_detail_ble_unsupported,
@@ -183,7 +181,7 @@ public class MainActivity extends Activity {
         }
 
         if (!BluetoothPermissionHelper.hasRequiredPermissions(this)) {
-            closeStationConnection();
+            pauseStationMonitoring(MonitoringLifecycle.PauseReason.PERMISSION_UNAVAILABLE);
             if (BluetoothPermissionHelper.wasPermissionRequested(this)) {
                 showBluetoothSetupState(
                         R.string.station_permission_denied,
@@ -203,7 +201,7 @@ public class MainActivity extends Activity {
         BluetoothAdapter bluetoothAdapter = getBluetoothAdapter();
 
         if (bluetoothAdapter == null) {
-            closeStationConnection();
+            pauseStationMonitoring(MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE);
             showBluetoothSetupState(
                     R.string.station_ble_unsupported,
                     R.string.reading_detail_ble_unsupported,
@@ -213,7 +211,7 @@ public class MainActivity extends Activity {
         }
 
         if (!bluetoothAdapter.isEnabled()) {
-            closeStationConnection();
+            pauseStationMonitoring(MonitoringLifecycle.PauseReason.BLUETOOTH_OFF);
             showBluetoothSetupState(
                     R.string.station_bluetooth_off,
                     R.string.reading_detail_bluetooth_off,
@@ -222,17 +220,22 @@ public class MainActivity extends Activity {
             return;
         }
 
-        WeightStationConnection connection = connectionManager.getOrCreateConnection();
-        if (connection == null) {
-            showBluetoothReadyState();
+        MonitoringLifecycle.PauseReason pauseReason =
+                connectionManager.getMonitoringPauseReason();
+        if (shouldResumeMonitoring(pauseReason)) {
+            StationMonitoringService.startMonitoring(this);
             return;
         }
-        WeightStationConnection.State connectionState = connection.getState();
-        if (connectionState == WeightStationConnection.State.IDLE) {
-            showBluetoothReadyState();
-        } else {
-            handleConnectionState(connectionState, connection.getFailure());
-        }
+        renderMonitoringState(
+                connectionManager.getMonitoringState(),
+                connectionManager.getMonitoringPauseReason()
+        );
+    }
+
+    private boolean shouldResumeMonitoring(MonitoringLifecycle.PauseReason pauseReason) {
+        return connectionManager.getMonitoringState() == MonitoringLifecycle.State.PAUSED
+                && connectionManager.isMonitoringEnabled()
+                && pauseReason != MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE;
     }
 
     private BluetoothAdapter getBluetoothAdapter() {
@@ -240,8 +243,10 @@ public class MainActivity extends Activity {
         return bluetoothManager == null ? null : bluetoothManager.getAdapter();
     }
 
-    private void closeStationConnection() {
-        connectionManager.reset();
+    private void pauseStationMonitoring(MonitoringLifecycle.PauseReason reason) {
+        if (connectionManager.getMonitoringState() != MonitoringLifecycle.State.STOPPED) {
+            connectionManager.pauseMonitoring(reason);
+        }
     }
 
     private void showBluetoothSetupState(int stationText, int detailText, int buttonText) {
@@ -270,6 +275,60 @@ public class MainActivity extends Activity {
         connectionDetail.setText(R.string.reading_detail_bluetooth_ready);
     }
 
+    private void renderMonitoringState(
+            MonitoringLifecycle.State state,
+            MonitoringLifecycle.PauseReason pauseReason
+    ) {
+        switch (state) {
+            case MONITORING:
+                renderConnectionState(WeightStationConnection.State.CONNECTED, null);
+                break;
+            case RECONNECTING:
+                showPendingConnectionState(
+                        R.string.station_reconnecting,
+                        R.string.reading_detail_station_reconnecting
+                );
+                bluetoothActionButton.setText(R.string.stop_monitoring);
+                break;
+            case STARTING:
+                renderConnectionState(
+                        connectionManager.getState(),
+                        connectionManager.getFailure()
+                );
+                bluetoothActionButton.setText(R.string.stop_monitoring);
+                break;
+            case PAUSED:
+                showConnectionState(
+                        R.string.station_monitoring_paused,
+                        monitoringPauseDetail(pauseReason),
+                        R.string.stop_monitoring,
+                        R.drawable.status_waiting_background,
+                        R.color.status_waiting_text
+                );
+                break;
+            case STOPPED:
+            default:
+                showBluetoothReadyState();
+                break;
+        }
+    }
+
+    private int monitoringPauseDetail(MonitoringLifecycle.PauseReason reason) {
+        if (reason == null) {
+            return R.string.monitoring_paused_unavailable;
+        }
+
+        switch (reason) {
+            case BLUETOOTH_OFF:
+                return R.string.monitoring_paused_bluetooth;
+            case PERMISSION_UNAVAILABLE:
+                return R.string.monitoring_paused_permission;
+            case CONNECTION_UNAVAILABLE:
+            default:
+                return R.string.monitoring_paused_unavailable;
+        }
+    }
+
     private void renderConnectionState(
             WeightStationConnection.State state,
             WeightStationConnection.Failure failure
@@ -291,7 +350,7 @@ public class MainActivity extends Activity {
             showConnectionState(
                     R.string.station_connected,
                     R.string.reading_detail_station_connected,
-                    R.string.disconnect_station,
+                    R.string.stop_monitoring,
                     R.drawable.status_connected_background,
                     R.color.status_connected_text
             );
@@ -417,21 +476,13 @@ public class MainActivity extends Activity {
     private void showSavedItems() {
         List<ItemProfile> savedProfiles = itemProfileRepository.getAll();
         int visibleCount = Math.min(savedProfiles.size(), MAX_DASHBOARD_ITEMS);
-        List<ItemProfile> nextVisibleProfiles =
-                new ArrayList<>(savedProfiles.subList(0, visibleCount));
-        visibleProfiles = nextVisibleProfiles;
+        visibleProfiles = new ArrayList<>(savedProfiles.subList(0, visibleCount));
 
         addItemButton.setVisibility(
                 visibleCount == MAX_DASHBOARD_ITEMS ? View.GONE : View.VISIBLE
         );
 
-        dashboardStateCoordinator = new DashboardStateCoordinator(
-                visibleProfiles,
-                MAX_DASHBOARD_ITEMS,
-                REQUIRED_STABLE_SAMPLES,
-                STABILITY_TOLERANCE_GRAMS,
-                EMPTY_WEIGHT_THRESHOLD_GRAMS
-        );
+        connectionManager.refreshProfiles(visibleProfiles);
 
         DisconnectSnapshot liveSnapshot = connectionManager.getLatestDashboardSnapshot();
         DisconnectSnapshot cachedSnapshot = disconnectSnapshotRepository.load();
@@ -455,7 +506,11 @@ public class MainActivity extends Activity {
     }
 
     private void showWaitingDashboard() {
-        renderDashboard(dashboardStateCoordinator.getStates(), false);
+        List<TrackedItemState> waitingStates = new ArrayList<>();
+        for (ItemProfile profile : visibleProfiles) {
+            waitingStates.add(TrackedItemState.unknown(profile));
+        }
+        renderDashboard(waitingStates, false);
         dashboardDataStatus.setText(R.string.dashboard_data_waiting);
     }
 
@@ -587,43 +642,18 @@ public class MainActivity extends Activity {
         statusView.setTextColor(getColor(textColor));
     }
 
-    private void showBluetoothReading(BluetoothReading reading) {
-        runOnUiThread(() -> updateDashboardFromReading(reading));
-    }
-
-    private void updateDashboardFromReading(BluetoothReading reading) {
-        if (!reading.hasPlateNumber()
-                || dashboardStateCoordinator == null
-                || ambiguousDialogVisible) {
-            return;
-        }
-        if (reading.getStatus() == BluetoothReading.Status.ERROR
-                || reading.getStatus() == BluetoothReading.Status.UNSTABLE) {
-            return;
-        }
-
-        double weightGrams = reading.getStatus() == BluetoothReading.Status.NO_LOAD
-                ? 0.0
-                : reading.getWeightGrams();
-        dashboardStateCoordinator
-                .processReading(
-                        new PlateReading(reading.getPlateNumber(), weightGrams)
-                )
-                .ifPresent(this::handleDashboardUpdate);
-    }
-
-    private void handleDashboardUpdate(List<TrackedItemState> states) {
+    private void handleDashboardUpdate(DisconnectSnapshot snapshot) {
         showDisconnectSnapshot = false;
-        long timestampMillis = System.currentTimeMillis();
-        connectionManager.recordDashboardStates(states, timestampMillis);
-        renderDashboard(states, false);
-        showLiveDashboardTime(timestampMillis);
-        showNextAmbiguousMatch();
+        renderDashboard(snapshot.restore(visibleProfiles), false);
+        showLiveDashboardTime(snapshot.getTimestampMillis());
+        if (!ambiguousDialogVisible) {
+            showNextAmbiguousMatch();
+        }
     }
 
     private void showNextAmbiguousMatch() {
         List<RecognitionResult> pendingResults =
-                dashboardStateCoordinator.getPendingAmbiguousResults();
+                connectionManager.getPendingAmbiguousResults();
         if (pendingResults.isEmpty()) {
             ambiguousDialogVisible = false;
             return;
@@ -660,34 +690,20 @@ public class MainActivity extends Activity {
     }
 
     private void confirmAmbiguousMatch(int plateNumber, ItemProfile selectedItem) {
-        List<TrackedItemState> states =
-                dashboardStateCoordinator.confirmAmbiguousMatch(
-                        plateNumber,
-                        selectedItem.getId()
-                );
-        finishAmbiguousChoice(states);
+        ambiguousDialogVisible = false;
+        connectionManager.confirmAmbiguousMatch(plateNumber, selectedItem.getId());
     }
 
     private void leaveAmbiguousMatchUnresolved(int plateNumber) {
-        List<TrackedItemState> states =
-                dashboardStateCoordinator.leaveAmbiguousMatchUnresolved(plateNumber);
-        finishAmbiguousChoice(states);
-    }
-
-    private void finishAmbiguousChoice(List<TrackedItemState> states) {
         ambiguousDialogVisible = false;
-        long timestampMillis = System.currentTimeMillis();
-        connectionManager.recordDashboardStates(states, timestampMillis);
-        renderDashboard(states, false);
-        showLiveDashboardTime(timestampMillis);
-        showNextAmbiguousMatch();
+        connectionManager.leaveAmbiguousMatchUnresolved(plateNumber);
     }
 
-    private void handleConnectionState(
-            WeightStationConnection.State state,
-            WeightStationConnection.Failure failure
-    ) {
-        renderConnectionState(state, failure);
+    private void handleConnectionState(WeightStationConnection.State state) {
+        renderMonitoringState(
+                connectionManager.getMonitoringState(),
+                connectionManager.getMonitoringPauseReason()
+        );
 
         if (state == WeightStationConnection.State.DISCONNECTED) {
             showSavedDisconnectSnapshot();

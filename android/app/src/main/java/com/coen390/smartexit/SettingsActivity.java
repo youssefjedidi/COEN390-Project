@@ -12,7 +12,9 @@ import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
-public class SettingsActivity extends Activity implements WeightStationConnection.Listener {
+public class SettingsActivity extends Activity implements
+        WeightStationConnection.Listener,
+        StationConnectionManager.MonitoringListener {
     private static final int BLUETOOTH_PERMISSION_REQUEST = 1002;
 
     private enum HardwareReadiness {
@@ -63,12 +65,14 @@ public class SettingsActivity extends Activity implements WeightStationConnectio
     protected void onResume() {
         super.onResume();
         connectionManager.addListener(this);
+        connectionManager.addMonitoringListener(this);
         renderScreen();
     }
 
     @Override
     protected void onPause() {
         connectionManager.removeListener(this);
+        connectionManager.removeMonitoringListener(this);
         super.onPause();
     }
 
@@ -88,14 +92,15 @@ public class SettingsActivity extends Activity implements WeightStationConnectio
 
     private void renderScreen() {
         HardwareReadiness readiness = getHardwareReadiness();
-        if (readiness != HardwareReadiness.READY
-                && connectionManager.getState() != WeightStationConnection.State.IDLE) {
-            connectionManager.reset();
+        if (readiness != HardwareReadiness.READY) {
+            pauseMonitoringFor(readiness);
+        } else if (shouldResumeMonitoring()) {
+            StationMonitoringService.startMonitoring(this);
         }
         renderHardwareStatus(readiness);
         renderConnectionState(
                 readiness,
-                connectionManager.getState(),
+                connectionManager.getMonitoringState(),
                 connectionManager.getFailure()
         );
         renderNotificationState();
@@ -197,19 +202,47 @@ public class SettingsActivity extends Activity implements WeightStationConnectio
             return;
         }
 
-        WeightStationConnection.State state = connectionManager.getState();
-        if (state == WeightStationConnection.State.SCANNING
-                || state == WeightStationConnection.State.CONNECTING
-                || state == WeightStationConnection.State.CONNECTED) {
-            connectionManager.disconnect();
+        MonitoringLifecycle.State state = connectionManager.getMonitoringState();
+        if (state == MonitoringLifecycle.State.STARTING
+                || state == MonitoringLifecycle.State.MONITORING
+                || state == MonitoringLifecycle.State.RECONNECTING) {
+            StationMonitoringService.stopMonitoring(this);
         } else {
-            connectionManager.connect();
+            StationMonitoringService.startMonitoring(this);
+        }
+    }
+
+    private void pauseMonitoringFor(HardwareReadiness readiness) {
+        if (connectionManager.getMonitoringState() == MonitoringLifecycle.State.STOPPED) {
+            return;
+        }
+
+        connectionManager.pauseMonitoring(pauseReasonFor(readiness));
+    }
+
+    private boolean shouldResumeMonitoring() {
+        return connectionManager.getMonitoringState() == MonitoringLifecycle.State.PAUSED
+                && connectionManager.isMonitoringEnabled()
+                && connectionManager.getMonitoringPauseReason()
+                != MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE;
+    }
+
+    private MonitoringLifecycle.PauseReason pauseReasonFor(HardwareReadiness readiness) {
+        switch (readiness) {
+            case PERMISSION_REQUIRED:
+                return MonitoringLifecycle.PauseReason.PERMISSION_UNAVAILABLE;
+            case BLUETOOTH_OFF:
+                return MonitoringLifecycle.PauseReason.BLUETOOTH_OFF;
+            case UNSUPPORTED:
+            case READY:
+            default:
+                return MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE;
         }
     }
 
     private void renderConnectionState(
             HardwareReadiness readiness,
-            WeightStationConnection.State state,
+            MonitoringLifecycle.State state,
             WeightStationConnection.Failure failure
     ) {
         connectionProgress.setVisibility(View.GONE);
@@ -222,43 +255,41 @@ public class SettingsActivity extends Activity implements WeightStationConnectio
         }
 
         switch (state) {
-            case SCANNING:
-            case CONNECTING:
-                connectionStatus.setText(
-                        state == WeightStationConnection.State.SCANNING
-                                ? R.string.connection_status_scanning
-                                : R.string.connection_status_connecting
-                );
+            case STARTING:
+                connectionStatus.setText(R.string.connection_status_connecting);
                 connectionProgress.setVisibility(View.VISIBLE);
-                setConnectionAction(R.string.action_cancel, true);
+                setConnectionAction(R.string.stop_monitoring, true);
                 break;
-            case CONNECTED:
-                connectionStatus.setText(R.string.connection_status_connected);
-                setConnectionAction(R.string.action_disconnect, true);
+            case MONITORING:
+                connectionStatus.setText(R.string.connection_status_monitoring);
+                setConnectionAction(R.string.stop_monitoring, true);
                 break;
-            case FAILED:
-                connectionStatus.setText(R.string.connection_status_failed);
-                connectionFailureReason.setText(connectionFailureText(failure));
-                connectionFailureReason.setVisibility(View.VISIBLE);
+            case RECONNECTING:
+                connectionStatus.setText(R.string.connection_status_reconnecting);
+                connectionProgress.setVisibility(View.VISIBLE);
+                setConnectionAction(R.string.stop_monitoring, true);
+                break;
+            case PAUSED:
+                connectionStatus.setText(R.string.connection_status_paused);
+                if (failure != null) {
+                    connectionFailureReason.setText(connectionFailureText(failure));
+                    connectionFailureReason.setVisibility(View.VISIBLE);
+                }
                 setConnectionAction(R.string.action_retry, true);
                 break;
-            case DISCONNECTED:
-                connectionStatus.setText(R.string.connection_status_disconnected);
-                setConnectionAction(R.string.action_connect, true);
-                break;
-            case IDLE:
+            case STOPPED:
             default:
-                connectionStatus.setText(R.string.connection_status_idle);
+                connectionStatus.setText(R.string.connection_status_stopped);
                 setConnectionAction(R.string.action_connect, true);
                 break;
         }
 
-        boolean tareAvailable = state == WeightStationConnection.State.CONNECTED
+        boolean tareAvailable = state == MonitoringLifecycle.State.MONITORING
                 && connectionManager.canRequestTare();
         int tareText = R.string.tare_status_station_required;
         if (tareAvailable) {
             tareText = R.string.tare_status_ready;
-        } else if (state == WeightStationConnection.State.CONNECTED) {
+        } else if (state == MonitoringLifecycle.State.MONITORING) {
             tareText = R.string.tare_status_firmware_required;
         }
         renderTareState(tareAvailable, tareText);
@@ -366,6 +397,14 @@ public class SettingsActivity extends Activity implements WeightStationConnectio
     public void onStateChanged(
             WeightStationConnection.State state,
             WeightStationConnection.Failure failure
+    ) {
+        runOnUiThread(this::renderScreen);
+    }
+
+    @Override
+    public void onMonitoringStateChanged(
+            MonitoringLifecycle.State state,
+            MonitoringLifecycle.PauseReason pauseReason
     ) {
         runOnUiThread(this::renderScreen);
     }

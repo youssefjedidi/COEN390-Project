@@ -115,6 +115,7 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
             UUID serviceUuid,
             UUID characteristicUuid,
             UUID commandCharacteristicUuid,
+            WeightStationConnection.ConnectionMode mode,
             WeightStationConnection.ConnectionEvents events
     ) {
         disconnectGatt();
@@ -128,9 +129,11 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
             BluetoothDevice bluetoothDevice = bluetoothAdapter.getRemoteDevice(device.address);
             bluetoothGatt = bluetoothDevice.connectGatt(
                     appContext,
-                    false,
+                    mode == WeightStationConnection.ConnectionMode.AUTO_RECONNECT,
                     gattCallback,
-                    BluetoothDevice.TRANSPORT_LE
+                    BluetoothDevice.TRANSPORT_LE,
+                    BluetoothDevice.PHY_LE_1M_MASK,
+                    mainHandler
             );
 
             if (bluetoothGatt == null) {
