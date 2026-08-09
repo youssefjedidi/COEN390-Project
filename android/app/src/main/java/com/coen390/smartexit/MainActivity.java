@@ -47,6 +47,7 @@ public class MainActivity extends Activity {
     private StationConnectionManager connectionManager;
     private WeightStationConnection.Listener connectionListener;
     private StationConnectionManager.DashboardListener dashboardListener;
+    private StationConnectionManager.MonitoringListener monitoringListener;
     private boolean showDisconnectSnapshot;
 
     static Intent newIntentForDisconnectSnapshot(Context context) {
@@ -93,6 +94,10 @@ public class MainActivity extends Activity {
         connectionManager.addListener(connectionListener);
         dashboardListener = snapshot -> runOnUiThread(() -> handleDashboardUpdate(snapshot));
         connectionManager.addDashboardListener(dashboardListener);
+        monitoringListener = (state, reason) -> runOnUiThread(
+                () -> renderMonitoringState(state, reason)
+        );
+        connectionManager.addMonitoringListener(monitoringListener);
 
         addItemButton = findViewById(R.id.addItemButton);
         addItemButton.setOnClickListener(
@@ -124,6 +129,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         connectionManager.removeListener(connectionListener);
         connectionManager.removeDashboardListener(dashboardListener);
+        connectionManager.removeMonitoringListener(monitoringListener);
         super.onDestroy();
     }
 
@@ -156,24 +162,19 @@ public class MainActivity extends Activity {
             return;
         }
 
-        WeightStationConnection connection = connectionManager.getOrCreateConnection();
-        if (connection == null) {
-            return;
-        }
-        WeightStationConnection.State state = connection.getState();
-
-        if (state == WeightStationConnection.State.SCANNING
-                || state == WeightStationConnection.State.CONNECTING
-                || state == WeightStationConnection.State.CONNECTED) {
-            connectionManager.disconnect();
+        MonitoringLifecycle.State state = connectionManager.getMonitoringState();
+        if (state == MonitoringLifecycle.State.STARTING
+                || state == MonitoringLifecycle.State.MONITORING
+                || state == MonitoringLifecycle.State.RECONNECTING) {
+            StationMonitoringService.stop(this);
         } else {
-            connectionManager.connect();
+            StationMonitoringService.start(this);
         }
     }
 
     private void updateBluetoothReadiness() {
         if (!BluetoothPermissionHelper.supportsBle(this)) {
-            closeStationConnection();
+            pauseStationMonitoring(MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE);
             showBluetoothSetupState(
                     R.string.station_ble_unsupported,
                     R.string.reading_detail_ble_unsupported,
@@ -183,7 +184,7 @@ public class MainActivity extends Activity {
         }
 
         if (!BluetoothPermissionHelper.hasRequiredPermissions(this)) {
-            closeStationConnection();
+            pauseStationMonitoring(MonitoringLifecycle.PauseReason.PERMISSION_UNAVAILABLE);
             if (BluetoothPermissionHelper.wasPermissionRequested(this)) {
                 showBluetoothSetupState(
                         R.string.station_permission_denied,
@@ -203,7 +204,7 @@ public class MainActivity extends Activity {
         BluetoothAdapter bluetoothAdapter = getBluetoothAdapter();
 
         if (bluetoothAdapter == null) {
-            closeStationConnection();
+            pauseStationMonitoring(MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE);
             showBluetoothSetupState(
                     R.string.station_ble_unsupported,
                     R.string.reading_detail_ble_unsupported,
@@ -213,7 +214,7 @@ public class MainActivity extends Activity {
         }
 
         if (!bluetoothAdapter.isEnabled()) {
-            closeStationConnection();
+            pauseStationMonitoring(MonitoringLifecycle.PauseReason.BLUETOOTH_OFF);
             showBluetoothSetupState(
                     R.string.station_bluetooth_off,
                     R.string.reading_detail_bluetooth_off,
@@ -222,17 +223,18 @@ public class MainActivity extends Activity {
             return;
         }
 
-        WeightStationConnection connection = connectionManager.getOrCreateConnection();
-        if (connection == null) {
-            showBluetoothReadyState();
+        MonitoringLifecycle.PauseReason pauseReason =
+                connectionManager.getMonitoringPauseReason();
+        if (connectionManager.getMonitoringState() == MonitoringLifecycle.State.PAUSED
+                && connectionManager.isMonitoringEnabled()
+                && pauseReason != MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE) {
+            StationMonitoringService.start(this);
             return;
         }
-        WeightStationConnection.State connectionState = connection.getState();
-        if (connectionState == WeightStationConnection.State.IDLE) {
-            showBluetoothReadyState();
-        } else {
-            handleConnectionState(connectionState, connection.getFailure());
-        }
+        renderMonitoringState(
+                connectionManager.getMonitoringState(),
+                connectionManager.getMonitoringPauseReason()
+        );
     }
 
     private BluetoothAdapter getBluetoothAdapter() {
@@ -240,8 +242,10 @@ public class MainActivity extends Activity {
         return bluetoothManager == null ? null : bluetoothManager.getAdapter();
     }
 
-    private void closeStationConnection() {
-        connectionManager.reset();
+    private void pauseStationMonitoring(MonitoringLifecycle.PauseReason reason) {
+        if (connectionManager.getMonitoringState() != MonitoringLifecycle.State.STOPPED) {
+            connectionManager.pauseMonitoring(reason);
+        }
     }
 
     private void showBluetoothSetupState(int stationText, int detailText, int buttonText) {
@@ -270,6 +274,50 @@ public class MainActivity extends Activity {
         connectionDetail.setText(R.string.reading_detail_bluetooth_ready);
     }
 
+    private void renderMonitoringState(
+            MonitoringLifecycle.State state,
+            MonitoringLifecycle.PauseReason pauseReason
+    ) {
+        if (state == MonitoringLifecycle.State.MONITORING) {
+            renderConnectionState(WeightStationConnection.State.CONNECTED, null);
+            return;
+        }
+        if (state == MonitoringLifecycle.State.RECONNECTING) {
+            showPendingConnectionState(
+                    R.string.station_reconnecting,
+                    R.string.reading_detail_station_reconnecting
+            );
+            bluetoothActionButton.setText(R.string.stop_monitoring);
+            return;
+        }
+        if (state == MonitoringLifecycle.State.STARTING) {
+            renderConnectionState(connectionManager.getState(), connectionManager.getFailure());
+            bluetoothActionButton.setText(R.string.stop_monitoring);
+            return;
+        }
+        if (state == MonitoringLifecycle.State.PAUSED) {
+            showConnectionState(
+                    R.string.station_monitoring_paused,
+                    monitoringPauseDetail(pauseReason),
+                    R.string.stop_monitoring,
+                    R.drawable.status_waiting_background,
+                    R.color.status_waiting_text
+            );
+            return;
+        }
+        showBluetoothReadyState();
+    }
+
+    private int monitoringPauseDetail(MonitoringLifecycle.PauseReason reason) {
+        if (reason == MonitoringLifecycle.PauseReason.BLUETOOTH_OFF) {
+            return R.string.monitoring_paused_bluetooth;
+        }
+        if (reason == MonitoringLifecycle.PauseReason.PERMISSION_UNAVAILABLE) {
+            return R.string.monitoring_paused_permission;
+        }
+        return R.string.monitoring_paused_unavailable;
+    }
+
     private void renderConnectionState(
             WeightStationConnection.State state,
             WeightStationConnection.Failure failure
@@ -291,7 +339,7 @@ public class MainActivity extends Activity {
             showConnectionState(
                     R.string.station_connected,
                     R.string.reading_detail_station_connected,
-                    R.string.disconnect_station,
+                    R.string.stop_monitoring,
                     R.drawable.status_connected_background,
                     R.color.status_connected_text
             );
@@ -646,7 +694,10 @@ public class MainActivity extends Activity {
             WeightStationConnection.State state,
             WeightStationConnection.Failure failure
     ) {
-        renderConnectionState(state, failure);
+        renderMonitoringState(
+                connectionManager.getMonitoringState(),
+                connectionManager.getMonitoringPauseReason()
+        );
 
         if (state == WeightStationConnection.State.DISCONNECTED) {
             showSavedDisconnectSnapshot();

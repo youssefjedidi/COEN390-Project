@@ -1,5 +1,6 @@
 package com.coen390.smartexit;
 
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
 import android.content.Context;
@@ -76,7 +77,7 @@ final class StationConnectionManager implements WeightStationConnection.Listener
      * Returns the shared connection, creating it if needed. Returns null if
      * a BluetoothAdapter isn't available on this device (BLE unsupported).
      */
-    WeightStationConnection getOrCreateConnection() {
+    private WeightStationConnection getOrCreateConnection() {
         if (connection == null) {
             BluetoothAdapter adapter = getBluetoothAdapter();
             if (adapter == null) {
@@ -148,11 +149,11 @@ final class StationConnectionManager implements WeightStationConnection.Listener
     }
 
     /** Fully tears down the connection, e.g. when permissions/BLE support are lost. */
-    void reset() {
-        pauseMonitoring(MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE);
-    }
-
     void pauseMonitoring(MonitoringLifecycle.PauseReason reason) {
+        if (monitoringLifecycle.getState() == MonitoringLifecycle.State.PAUSED
+                && monitoringLifecycle.getPauseReason() == reason) {
+            return;
+        }
         monitoringLifecycle.pause(reason);
         departureReminder.cancelDeparture();
         if (connection != null) {
@@ -162,21 +163,16 @@ final class StationConnectionManager implements WeightStationConnection.Listener
         notifyMonitoringListeners();
     }
 
-    void resumeMonitoring() {
-        if (!monitoringPreferences.isMonitoringEnabled()) {
-            return;
-        }
-        monitoringLifecycle.resume();
-        notifyMonitoringListeners();
-        connectToStation();
-    }
-
     MonitoringLifecycle.State getMonitoringState() {
         return monitoringLifecycle.getState();
     }
 
     MonitoringLifecycle.PauseReason getMonitoringPauseReason() {
         return monitoringLifecycle.getPauseReason();
+    }
+
+    boolean isMonitoringEnabled() {
+        return monitoringPreferences.isMonitoringEnabled();
     }
 
     void refreshProfiles(List<ItemProfile> profiles) {
@@ -257,15 +253,18 @@ final class StationConnectionManager implements WeightStationConnection.Listener
 
         if (state == WeightStationConnection.State.DISCONNECTED
                 && monitoringPreferences.isMonitoringEnabled()) {
-            if (monitoringLifecycle.disconnect(
-                    MonitoringLifecycle.DisconnectCause.LINK_LOSS
-            )) {
+            MonitoringLifecycle.DisconnectCause cause = disconnectCause();
+            if (monitoringLifecycle.disconnect(cause)) {
                 departureReminder.onLinkLost();
             }
-            connectToStation();
+            if (cause == MonitoringLifecycle.DisconnectCause.LINK_LOSS) {
+                connectToStation();
+            } else {
+                departureReminder.cancelDeparture();
+            }
         } else if (state == WeightStationConnection.State.FAILED
                 && monitoringPreferences.isMonitoringEnabled()) {
-            monitoringLifecycle.pause(MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE);
+            monitoringLifecycle.pause(pauseReasonForAvailability());
             departureReminder.cancelDeparture();
         }
         notifyMonitoringListeners();
@@ -305,6 +304,30 @@ final class StationConnectionManager implements WeightStationConnection.Listener
         for (MonitoringListener listener : monitoringListeners) {
             listener.onMonitoringStateChanged(state, reason);
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    private MonitoringLifecycle.DisconnectCause disconnectCause() {
+        if (!BluetoothPermissionHelper.hasRequiredPermissions(appContext)) {
+            return MonitoringLifecycle.DisconnectCause.PERMISSION_UNAVAILABLE;
+        }
+        BluetoothAdapter adapter = getBluetoothAdapter();
+        if (adapter == null || !adapter.isEnabled()) {
+            return MonitoringLifecycle.DisconnectCause.BLUETOOTH_OFF;
+        }
+        return MonitoringLifecycle.DisconnectCause.LINK_LOSS;
+    }
+
+    @SuppressLint("MissingPermission")
+    private MonitoringLifecycle.PauseReason pauseReasonForAvailability() {
+        if (!BluetoothPermissionHelper.hasRequiredPermissions(appContext)) {
+            return MonitoringLifecycle.PauseReason.PERMISSION_UNAVAILABLE;
+        }
+        BluetoothAdapter adapter = getBluetoothAdapter();
+        if (adapter == null || !adapter.isEnabled()) {
+            return MonitoringLifecycle.PauseReason.BLUETOOTH_OFF;
+        }
+        return MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE;
     }
 
     private static final class HandlerScheduler

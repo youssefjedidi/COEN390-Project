@@ -12,7 +12,7 @@ import android.os.Build;
 import android.os.IBinder;
 
 public final class StationMonitoringService extends Service
-        implements WeightStationConnection.Listener {
+        implements StationConnectionManager.MonitoringListener {
     private static final String ACTION_START =
             "com.coen390.smartexit.action.START_MONITORING";
     private static final String ACTION_STOP =
@@ -38,7 +38,7 @@ public final class StationMonitoringService extends Service
     public void onCreate() {
         super.onCreate();
         connectionManager = StationConnectionManager.getInstance(this);
-        connectionManager.addListener(this);
+        connectionManager.addMonitoringListener(this);
         createNotificationChannel();
     }
 
@@ -47,21 +47,22 @@ public final class StationMonitoringService extends Service
         startInForeground(R.string.monitoring_starting);
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             connectionManager.disconnect();
-            new StationMonitoringPreferences(this).setMonitoringEnabled(false);
             stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
             return START_NOT_STICKY;
         }
 
-        new StationMonitoringPreferences(this).setMonitoringEnabled(true);
         connectionManager.connect();
-        updateNotification(connectionManager.getState());
+        updateNotification(
+                connectionManager.getMonitoringState(),
+                connectionManager.getMonitoringPauseReason()
+        );
         return START_STICKY;
     }
 
     @Override
     public void onDestroy() {
-        connectionManager.removeListener(this);
+        connectionManager.removeMonitoringListener(this);
         super.onDestroy();
     }
 
@@ -71,21 +72,11 @@ public final class StationMonitoringService extends Service
     }
 
     @Override
-    public void onStateChanged(
-            WeightStationConnection.State state,
-            WeightStationConnection.Failure failure
+    public void onMonitoringStateChanged(
+            MonitoringLifecycle.State state,
+            MonitoringLifecycle.PauseReason pauseReason
     ) {
-        updateNotification(state);
-    }
-
-    @Override
-    public void onReadingReceived(BluetoothReading reading) {
-        // Complete plate cycles are stored by StationConnectionManager.
-    }
-
-    @Override
-    public void onInvalidPayload() {
-        // One malformed packet should not interrupt ongoing monitoring.
+        updateNotification(state, pauseReason);
     }
 
     private void startInForeground(int message) {
@@ -101,19 +92,33 @@ public final class StationMonitoringService extends Service
         }
     }
 
-    private void updateNotification(WeightStationConnection.State state) {
+    private void updateNotification(
+            MonitoringLifecycle.State state,
+            MonitoringLifecycle.PauseReason pauseReason
+    ) {
         int message = R.string.monitoring_starting;
-        if (state == WeightStationConnection.State.CONNECTED) {
+        if (state == MonitoringLifecycle.State.MONITORING) {
             message = R.string.monitoring_connected;
-        } else if (state == WeightStationConnection.State.DISCONNECTED
-                || state == WeightStationConnection.State.FAILED) {
+        } else if (state == MonitoringLifecycle.State.RECONNECTING) {
             message = R.string.monitoring_reconnecting;
+        } else if (state == MonitoringLifecycle.State.PAUSED) {
+            message = monitoringPauseText(pauseReason);
         }
 
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) {
             manager.notify(NOTIFICATION_ID, buildNotification(message));
         }
+    }
+
+    private int monitoringPauseText(MonitoringLifecycle.PauseReason reason) {
+        if (reason == MonitoringLifecycle.PauseReason.BLUETOOTH_OFF) {
+            return R.string.monitoring_paused_bluetooth;
+        }
+        if (reason == MonitoringLifecycle.PauseReason.PERMISSION_UNAVAILABLE) {
+            return R.string.monitoring_paused_permission;
+        }
+        return R.string.monitoring_paused_unavailable;
     }
 
     private Notification buildNotification(int message) {
