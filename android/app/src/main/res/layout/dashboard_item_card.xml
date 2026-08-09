@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="160dp"
@@ -8,7 +8,6 @@
     android:elevation="2dp"
     android:focusable="true"
     android:foreground="?android:attr/selectableItemBackground"
-    android:orientation="vertical"
     android:padding="16dp"
     android:visibility="invisible"
     tools:visibility="visible">
@@ -32,6 +31,7 @@
         android:id="@+id/itemName"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_below="@id/itemStatus"
         android:layout_marginTop="8dp"
         android:ellipsize="end"
         android:maxLines="2"
@@ -40,30 +40,25 @@
         android:textStyle="bold"
         tools:text="House keys" />
 
-    <LinearLayout
+    <ImageView
+        android:id="@+id/itemChevron"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_alignParentEnd="true"
+        android:layout_alignParentBottom="true"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_chevron_right" />
+
+    <TextView
+        android:id="@+id/itemDetail"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_marginTop="6dp"
-        android:layout_weight="1"
-        android:gravity="bottom|center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:id="@+id/itemDetail"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="2"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            tools:text="Plate 1" />
-
-        <ImageView
-            android:layout_width="20dp"
-            android:layout_height="20dp"
-            android:layout_marginStart="6dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_chevron_right" />
-    </LinearLayout>
-</LinearLayout>
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_marginEnd="6dp"
+        android:layout_toStartOf="@id/itemChevron"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:textColor="@color/text_secondary"
+        android:textSize="13sp"
+        tools:text="Plate 1" />
+</RelativeLayout>

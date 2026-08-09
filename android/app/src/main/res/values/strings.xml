@@ -5,7 +5,7 @@
     <string name="station_permission_denied">Bluetooth access denied</string>
     <string name="station_bluetooth_off">Bluetooth is off</string>
     <string name="station_ble_unsupported">Bluetooth unavailable</string>
-    <string name="station_scanning">Looking for station...</string>
+    <string name="station_scanning">Looking for station\u2026</string>
     <string name="station_connecting">Connecting to station</string>
     <string name="station_connected">Station connected</string>
     <string name="station_disconnected">Station disconnected</string>
@@ -31,9 +31,7 @@
     <string name="connect_to_station">Connect to station</string>
     <string name="cancel_connection">Cancel</string>
     <string name="disconnect_station">Disconnect</string>
-    <string name="reconnect_station">Reconnect</string>
     <string name="try_connection_again">Try again</string>
-    <string name="settings">Settings</string>
     <string name="tracked_items_title">Tracked items</string>
     <string name="dashboard_data_waiting">Checking your items\u2026</string>
     <string name="dashboard_data_live">Updated at %1$s</string>
@@ -115,7 +113,6 @@
     <string name="delete_item_confirm_title">Delete this item?</string>
     <string name="delete_item_confirm_message">This can\'t be undone.</string>
     <string name="delete">Delete</string>
-    <string name="nav_dashboard">Dashboard</string>
     <string name="disconnect_notification_channel">Forgotten-item reminders</string>
     <string name="disconnect_notification_title">Check before you leave</string>
     <string name="notifications_section_label">Forgotten-item reminders</string>
