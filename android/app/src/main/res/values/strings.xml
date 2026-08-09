@@ -2,8 +2,6 @@
 <resources>
     <string name="app_name">Smart Exit</string>
     <string name="station_waiting">Station waiting for data</string>
-    <string name="station_live">Station live</string>
-    <string name="station_offline">Station offline</string>
     <string name="station_permission_required">Bluetooth access needed</string>
     <string name="station_permission_denied">Bluetooth access denied</string>
     <string name="station_bluetooth_off">Bluetooth is off</string>
@@ -13,19 +11,7 @@
     <string name="station_connected">Station connected</string>
     <string name="station_disconnected">Station disconnected</string>
     <string name="station_connection_failed">Connection failed</string>
-    <string name="reading_state_waiting">Current tray reading</string>
-    <string name="reading_state_item_detected">Item detected on tray</string>
-    <string name="reading_state_clear">Tray appears clear</string>
-    <string name="reading_state_offline">Unable to verify tray</string>
-    <string name="empty_weight">-- g</string>
-    <string name="weight_format">%1$d g</string>
-    <string name="no_data_yet">No data received yet</string>
-    <string name="last_update_format">Last update: %1$s</string>
-    <string name="last_checked_format">Last checked: %1$s</string>
     <string name="reading_detail_waiting">Connect to the station to receive a weight reading.</string>
-    <string name="reading_detail_live_item">Live station reading: %1$s.</string>
-    <string name="reading_detail_clear">The reading is near zero. This is the state we expect when the tray is empty.</string>
-    <string name="reading_detail_offline">The app is keeping the last known value visible, but it should not claim the station is live.</string>
     <string name="reading_detail_permission_required">Allow Bluetooth access before connecting to the station.</string>
     <string name="reading_detail_permission_denied">Bluetooth access was denied. Allow Nearby devices access to connect to the station.</string>
     <string name="reading_detail_bluetooth_off">Turn on Bluetooth before connecting to the station.</string>
@@ -41,10 +27,6 @@
     <string name="reading_detail_service_missing">The station connected, but its expected weight service was not found.</string>
     <string name="reading_detail_characteristic_missing">The weight service connected, but its reading characteristic was not found.</string>
     <string name="reading_detail_notification_setup_failed">The station connected, but the app could not enable weight notifications.</string>
-    <string name="reading_detail_invalid_payload">The station sent a reading the app could not understand.</string>
-    <string name="reading_detail_sensor_error">The station reported a load-cell error. Check the sensor and calibration.</string>
-    <string name="reading_label_tray">tray load</string>
-    <string name="reading_label_plate">plate %1$d</string>
     <string name="allow_bluetooth_access">Allow Bluetooth access</string>
     <string name="try_bluetooth_access_again">Try again</string>
     <string name="open_bluetooth_settings">Open Bluetooth settings</string>
@@ -53,13 +35,8 @@
     <string name="disconnect_station">Disconnect</string>
     <string name="reconnect_station">Reconnect</string>
     <string name="try_connection_again">Try again</string>
-    <string name="data_source_waiting">Data source: not connected yet</string>
-    <string name="data_source_live">Data source: live station reading</string>
-    <string name="data_source_offline">Data source: last known reading</string>
     <string name="settings">Settings</string>
     <string name="tracked_items_title">Tracked items</string>
-    <string name="tracked_item_count_empty">0 of 4</string>
-    <string name="tracked_item_count_format">%1$d of %2$d</string>
     <string name="dashboard_data_waiting">Waiting for a complete set of plate readings</string>
     <string name="dashboard_data_live">Live data \u00b7 updated %1$s</string>
     <string name="dashboard_data_cached">Last state before disconnect \u00b7 saved %1$s</string>
@@ -75,7 +52,6 @@
     <string name="item_detail_waiting">Waiting for a stable station reading</string>
     <string name="item_detail_calibration_required">Calibration required</string>
     <string name="add_item">Add item</string>
-    <string name="latest_station_reading">Latest station reading</string>
     <string name="add_item_title">Add Item</string>
     <string name="edit_item_title">Edit Item</string>
     <string name="item_name_label">Item name</string>
