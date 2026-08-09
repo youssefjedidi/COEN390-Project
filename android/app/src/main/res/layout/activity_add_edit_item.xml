@@ -3,22 +3,45 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/screen_background"
-    android:fillViewport="true">
+    android:fillViewport="true"
+    android:fitsSystemWindows="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:paddingStart="24dp"
+        android:paddingTop="20dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="32dp">
 
-        <TextView
-            android:id="@+id/screenTitle"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/add_item_title"
-            android:textColor="@color/text_primary"
-            android:textSize="28sp"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/backButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/back"
+                android:padding="12dp"
+                android:src="@drawable/ic_arrow_back"
+                android:tint="@color/text_primary" />
+
+            <TextView
+                android:id="@+id/screenTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:text="@string/add_item_title"
+                android:textColor="@color/text_primary"
+                android:textSize="28sp"
+                android:textStyle="bold" />
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -79,11 +102,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
                 android:layout_marginTop="12dp"
-                android:background="@drawable/secondary_button_background"
+                android:background="@drawable/primary_button_background"
                 android:enabled="false"
                 android:text="@string/calibration_start"
                 android:textAllCaps="false"
-                android:textColor="@color/button_secondary_text"
+                android:textColor="@color/button_primary_text"
                 android:textSize="15sp" />
         </LinearLayout>
 
@@ -92,29 +115,20 @@
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:layout_marginTop="26dp"
-            android:background="@drawable/primary_button_background"
-            android:text="@string/save"
-            android:textAllCaps="false"
-            android:textColor="@color/button_primary_text"
-            android:textSize="15sp" />
-
-        <Button
-            android:id="@+id/cancelButton"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="10dp"
             android:background="@drawable/secondary_button_background"
-            android:text="@string/cancel"
+            android:text="@string/save"
             android:textAllCaps="false"
             android:textColor="@color/button_secondary_text"
             android:textSize="15sp" />
 
         <Button
             android:id="@+id/deleteButton"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="48dp"
-            android:layout_marginTop="10dp"
+            android:layout_gravity="start"
+            android:layout_marginTop="18dp"
             android:background="@drawable/warning_button_background"
+            android:minWidth="140dp"
             android:text="@string/delete_item"
             android:textAllCaps="false"
             android:textColor="@color/button_warning_text"

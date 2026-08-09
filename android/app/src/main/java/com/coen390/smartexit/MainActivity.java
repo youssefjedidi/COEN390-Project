@@ -32,8 +32,9 @@ public class MainActivity extends Activity {
 
     private TextView stationStatus;
     private TextView connectionDetail;
+    private View connectionProgress;
     private Button bluetoothActionButton;
-    private Button addItemButton;
+    private View addItemButton;
     private View dashboardEmptyState;
     private View dashboardItemGrid;
     private View dashboardGridSecondRow;
@@ -42,7 +43,6 @@ public class MainActivity extends Activity {
     private TextView[] itemNames;
     private TextView[] itemStatuses;
     private TextView[] itemDetails;
-    private String[] currentItemIds = new String[MAX_DASHBOARD_ITEMS];
     private DashboardStateCoordinator dashboardStateCoordinator;
     private boolean ambiguousDialogVisible;
     private ItemProfileRepository itemProfileRepository;
@@ -65,6 +65,7 @@ public class MainActivity extends Activity {
 
         stationStatus = findViewById(R.id.stationStatus);
         connectionDetail = findViewById(R.id.connectionDetail);
+        connectionProgress = findViewById(R.id.connectionProgress);
         bluetoothActionButton = findViewById(R.id.bluetoothActionButton);
 
         itemProfileRepository = new ItemProfileRepository(this);
@@ -244,6 +245,7 @@ public class MainActivity extends Activity {
     }
 
     private void showBluetoothSetupState(int stationText, int detailText, int buttonText) {
+        showIdleConnectionPresentation();
         stationStatus.setText(stationText);
         stationStatus.setBackgroundResource(R.drawable.status_offline_background);
         stationStatus.setTextColor(getColor(R.color.status_offline_text));
@@ -259,11 +261,12 @@ public class MainActivity extends Activity {
     }
 
     private void showBluetoothReadyState() {
+        showIdleConnectionPresentation();
         bluetoothActionButton.setText(R.string.connect_to_station);
         bluetoothActionButton.setVisibility(View.VISIBLE);
-        stationStatus.setText(R.string.station_waiting);
-        stationStatus.setBackgroundResource(R.drawable.status_waiting_background);
-        stationStatus.setTextColor(getColor(R.color.status_waiting_text));
+        stationStatus.setText(R.string.station_disconnected);
+        stationStatus.setBackgroundResource(R.drawable.status_neutral_background);
+        stationStatus.setTextColor(getColor(R.color.status_neutral_text));
         connectionDetail.setText(R.string.reading_detail_bluetooth_ready);
     }
 
@@ -272,23 +275,14 @@ public class MainActivity extends Activity {
             WeightStationConnection.Failure failure
     ) {
         if (state == WeightStationConnection.State.SCANNING) {
-            showConnectionState(
-                    R.string.station_scanning,
-                    R.string.reading_detail_station_scanning,
-                    R.string.cancel_connection,
-                    R.drawable.status_waiting_background,
-                    R.color.status_waiting_text
-            );
+            showPendingConnectionState(R.string.station_scanning);
             return;
         }
 
         if (state == WeightStationConnection.State.CONNECTING) {
-            showConnectionState(
+            showPendingConnectionState(
                     R.string.station_connecting,
-                    R.string.reading_detail_station_connecting,
-                    R.string.cancel_connection,
-                    R.drawable.status_waiting_background,
-                    R.color.status_waiting_text
+                    R.string.reading_detail_station_connecting
             );
             return;
         }
@@ -301,6 +295,8 @@ public class MainActivity extends Activity {
                     R.drawable.status_connected_background,
                     R.color.status_connected_text
             );
+            connectionDetail.setVisibility(View.GONE);
+            showSecondaryBluetoothAction();
             return;
         }
 
@@ -319,9 +315,9 @@ public class MainActivity extends Activity {
             showConnectionState(
                     R.string.station_disconnected,
                     R.string.reading_detail_station_disconnected,
-                    R.string.reconnect_station,
-                    R.drawable.status_offline_background,
-                    R.color.status_offline_text
+                    R.string.connect_to_station,
+                    R.drawable.status_neutral_background,
+                    R.color.status_neutral_text
             );
             return;
         }
@@ -336,12 +332,42 @@ public class MainActivity extends Activity {
             int background,
             int textColor
     ) {
+        showIdleConnectionPresentation();
         stationStatus.setText(stationText);
         stationStatus.setBackgroundResource(background);
         stationStatus.setTextColor(getColor(textColor));
         connectionDetail.setText(detailText);
         bluetoothActionButton.setText(buttonText);
         bluetoothActionButton.setVisibility(View.VISIBLE);
+    }
+
+    private void showPendingConnectionState(int stationText, int detailText) {
+        showConnectionState(
+                stationText,
+                detailText,
+                R.string.cancel_connection,
+                R.drawable.status_waiting_background,
+                R.color.status_waiting_text
+        );
+        connectionProgress.setVisibility(View.VISIBLE);
+        showSecondaryBluetoothAction();
+    }
+
+    private void showPendingConnectionState(int stationText) {
+        showPendingConnectionState(stationText, R.string.reading_detail_waiting);
+        connectionDetail.setVisibility(View.GONE);
+    }
+
+    private void showIdleConnectionPresentation() {
+        connectionProgress.setVisibility(View.GONE);
+        connectionDetail.setVisibility(View.VISIBLE);
+        bluetoothActionButton.setBackgroundResource(R.drawable.primary_button_background);
+        bluetoothActionButton.setTextColor(getColor(R.color.button_primary_text));
+    }
+
+    private void showSecondaryBluetoothAction() {
+        bluetoothActionButton.setBackgroundResource(R.drawable.secondary_button_background);
+        bluetoothActionButton.setTextColor(getColor(R.color.button_secondary_text));
     }
 
     private int connectionFailureText(WeightStationConnection.Failure failure) {
@@ -375,26 +401,15 @@ public class MainActivity extends Activity {
                 findViewById(R.id.itemRow3),
                 findViewById(R.id.itemRow4)
         };
-        itemNames = new TextView[] {
-                findViewById(R.id.itemName1),
-                findViewById(R.id.itemName2),
-                findViewById(R.id.itemName3),
-                findViewById(R.id.itemName4)
-        };
-        itemStatuses = new TextView[] {
-                findViewById(R.id.itemStatus1),
-                findViewById(R.id.itemStatus2),
-                findViewById(R.id.itemStatus3),
-                findViewById(R.id.itemStatus4)
-        };
-        itemDetails = new TextView[] {
-                findViewById(R.id.itemDetail1),
-                findViewById(R.id.itemDetail2),
-                findViewById(R.id.itemDetail3),
-                findViewById(R.id.itemDetail4)
-        };
+        itemNames = new TextView[MAX_DASHBOARD_ITEMS];
+        itemStatuses = new TextView[MAX_DASHBOARD_ITEMS];
+        itemDetails = new TextView[MAX_DASHBOARD_ITEMS];
+
         for (int i = 0; i < MAX_DASHBOARD_ITEMS; i++) {
             int index = i;
+            itemNames[index] = itemRows[index].findViewById(R.id.itemName);
+            itemStatuses[index] = itemRows[index].findViewById(R.id.itemStatus);
+            itemDetails[index] = itemRows[index].findViewById(R.id.itemDetail);
             itemRows[index].setOnClickListener(v -> openItemDetails(index));
         }
     }
@@ -455,7 +470,6 @@ public class MainActivity extends Activity {
         for (int index = 0; index < MAX_DASHBOARD_ITEMS; index++) {
             if (index >= visibleCount) {
                 itemRows[index].setVisibility(View.INVISIBLE);
-                currentItemIds[index] = null;
                 continue;
             }
 
@@ -465,9 +479,9 @@ public class MainActivity extends Activity {
     }
 
     private void openItemDetails(int index) {
-        String itemId = currentItemIds[index];
-        if (itemId != null) {
-            startActivity(AddEditItemActivity.newIntentForEdit(this, itemId));
+        if (index < visibleProfiles.size()) {
+            ItemProfile profile = visibleProfiles.get(index);
+            startActivity(AddEditItemActivity.newIntentForEdit(this, profile.getId()));
         }
     }
 
@@ -478,10 +492,16 @@ public class MainActivity extends Activity {
     ) {
         DashboardItemDisplayState displayState =
                 DashboardItemDisplayState.from(state.getStatus(), cachedSnapshot);
-        currentItemIds[index] = state.getItem().getId();
         itemNames[index].setText(state.getItem().getName());
+        itemRows[index].setContentDescription(
+                getString(R.string.edit_item_accessibility, state.getItem().getName())
+        );
         itemStatuses[index].setText(itemStatusText(displayState));
-        itemDetails[index].setText(itemDetailText(state));
+        String detailText = itemDetailText(state, displayState);
+        itemDetails[index].setVisibility(detailText == null ? View.INVISIBLE : View.VISIBLE);
+        if (detailText != null) {
+            itemDetails[index].setText(detailText);
+        }
 
         if (displayState == DashboardItemDisplayState.PRESENT) {
             styleItemStatus(
@@ -495,13 +515,19 @@ public class MainActivity extends Activity {
                     R.drawable.status_missing_background,
                     R.color.status_missing_text
             );
-        } else if (displayState == DashboardItemDisplayState.STILL_ON_TRAY) {
+        } else if (displayState == DashboardItemDisplayState.WAS_ON_TRAY) {
             styleItemStatus(
                     itemStatuses[index],
                     R.drawable.status_offline_background,
                     R.color.status_offline_text
             );
-        } else if (displayState == DashboardItemDisplayState.NOT_ON_TRAY) {
+        } else if (displayState == DashboardItemDisplayState.WAS_NOT_ON_TRAY) {
+            styleItemStatus(
+                    itemStatuses[index],
+                    R.drawable.status_waiting_background,
+                    R.color.status_waiting_text
+            );
+        } else if (displayState == DashboardItemDisplayState.WAS_UNKNOWN) {
             styleItemStatus(
                     itemStatuses[index],
                     R.drawable.status_neutral_background,
@@ -523,25 +549,34 @@ public class MainActivity extends Activity {
         if (status == DashboardItemDisplayState.MISSING) {
             return R.string.item_status_missing;
         }
-        if (status == DashboardItemDisplayState.STILL_ON_TRAY) {
-            return R.string.item_status_still_on_tray;
+        if (status == DashboardItemDisplayState.WAS_ON_TRAY) {
+            return R.string.item_status_was_on_tray;
         }
-        if (status == DashboardItemDisplayState.NOT_ON_TRAY) {
-            return R.string.item_status_not_on_tray;
+        if (status == DashboardItemDisplayState.WAS_NOT_ON_TRAY) {
+            return R.string.item_status_was_not_on_tray;
+        }
+        if (status == DashboardItemDisplayState.WAS_UNKNOWN) {
+            return R.string.item_status_was_unknown;
         }
         return R.string.item_status_unknown;
     }
 
-    private String itemDetailText(TrackedItemState state) {
+    private String itemDetailText(
+            TrackedItemState state,
+            DashboardItemDisplayState displayState
+    ) {
         if (state.getStatus() == TrackedItemStatus.PRESENT
                 && state.getPlateNumber() != null) {
             return getString(R.string.item_detail_plate, state.getPlateNumber());
         }
         if (state.getStatus() == TrackedItemStatus.MISSING) {
-            return getString(R.string.item_detail_missing);
+            return null;
         }
         if (!state.getItem().isCalibrated()) {
             return getString(R.string.item_detail_calibration_required);
+        }
+        if (displayState == DashboardItemDisplayState.WAS_UNKNOWN) {
+            return getString(R.string.item_detail_was_unknown);
         }
         return getString(R.string.item_detail_waiting);
     }
