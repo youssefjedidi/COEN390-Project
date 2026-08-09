@@ -48,6 +48,30 @@ public class WeightStationConnectionTest {
                 transport.connectedCommandCharacteristicUuid
         );
         assertEquals(WeightStationConnection.State.CONNECTING, states.lastState());
+        assertEquals(WeightStationConnection.ConnectionMode.DIRECT, transport.connectionMode);
+    }
+
+    @Test
+    public void rememberedStationUsesPlatformAutoReconnectWithoutScanning() {
+        connection.connectKnown("AA:BB:CC:DD:EE:FF");
+
+        assertNull(transport.scannedServiceUuid);
+        assertEquals("AA:BB:CC:DD:EE:FF", transport.connectedAddress);
+        assertEquals(
+                WeightStationConnection.ConnectionMode.AUTO_RECONNECT,
+                transport.connectionMode
+        );
+        assertEquals(WeightStationConnection.State.CONNECTING, states.lastState());
+    }
+
+    @Test
+    public void stationAddressIsExposedOnlyAfterConnectionIsReady() {
+        connection.connectKnown("AA:BB:CC:DD:EE:FF");
+        assertNull(connection.getConnectedStationAddress());
+
+        transport.finishConnection(false);
+
+        assertEquals("AA:BB:CC:DD:EE:FF", connection.getConnectedStationAddress());
     }
 
     @Test
@@ -324,6 +348,8 @@ public class WeightStationConnectionTest {
         UUID connectedServiceUuid;
         UUID connectedCharacteristicUuid;
         UUID connectedCommandCharacteristicUuid;
+        String connectedAddress;
+        WeightStationConnection.ConnectionMode connectionMode;
         WeightStationConnection.ScanEvents scanEvents;
         WeightStationConnection.ConnectionEvents connectionEvents;
         WeightStationConnection.CommandEvents commandEvents;
@@ -349,11 +375,14 @@ public class WeightStationConnectionTest {
                 UUID serviceUuid,
                 UUID characteristicUuid,
                 UUID commandCharacteristicUuid,
+                WeightStationConnection.ConnectionMode mode,
                 WeightStationConnection.ConnectionEvents events
         ) {
+            connectedAddress = device.address;
             connectedServiceUuid = serviceUuid;
             connectedCharacteristicUuid = characteristicUuid;
             connectedCommandCharacteristicUuid = commandCharacteristicUuid;
+            connectionMode = mode;
             connectionEvents = events;
         }
 

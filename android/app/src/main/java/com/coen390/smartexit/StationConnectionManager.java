@@ -34,12 +34,14 @@ final class StationConnectionManager implements WeightStationConnection.Listener
             new CopyOnWriteArrayList<>();
     private final DisconnectSnapshotRepository disconnectSnapshotRepository;
     private final StationReadingProcessor readingProcessor;
+    private final StationMonitoringPreferences monitoringPreferences;
     private WeightStationConnection connection;
     private DisconnectSnapshot latestDashboardSnapshot;
 
     private StationConnectionManager(Context appContext) {
         this.appContext = appContext;
         disconnectSnapshotRepository = new DisconnectSnapshotRepository(appContext);
+        monitoringPreferences = new StationMonitoringPreferences(appContext);
         readingProcessor = new StationReadingProcessor(
                 new ItemProfileRepository(appContext).getAll(),
                 PLATE_COUNT,
@@ -76,12 +78,20 @@ final class StationConnectionManager implements WeightStationConnection.Listener
 
     void connect() {
         WeightStationConnection conn = getOrCreateConnection();
-        if (conn != null) {
+        if (conn == null) {
+            return;
+        }
+
+        String knownAddress = monitoringPreferences.getKnownStationAddress();
+        if (knownAddress == null) {
             conn.connect();
+        } else {
+            conn.connectKnown(knownAddress);
         }
     }
 
     void disconnect() {
+        monitoringPreferences.setMonitoringEnabled(false);
         if (connection != null) {
             connection.disconnect();
         }
@@ -162,8 +172,20 @@ final class StationConnectionManager implements WeightStationConnection.Listener
 
     @Override
     public void onStateChanged(WeightStationConnection.State state, WeightStationConnection.Failure failure) {
+        if (state == WeightStationConnection.State.CONNECTED) {
+            String address = connection == null ? null : connection.getConnectedStationAddress();
+            if (address != null) {
+                monitoringPreferences.rememberStation(address);
+                monitoringPreferences.setMonitoringEnabled(true);
+            }
+        }
         for (WeightStationConnection.Listener listener : listeners) {
             listener.onStateChanged(state, failure);
+        }
+
+        if (state == WeightStationConnection.State.DISCONNECTED
+                && monitoringPreferences.isMonitoringEnabled()) {
+            connect();
         }
     }
 
