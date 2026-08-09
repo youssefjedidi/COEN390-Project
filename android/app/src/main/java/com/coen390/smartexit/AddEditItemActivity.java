@@ -49,6 +49,7 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
     private TextView calibrationStatus;
     private TextView calibrationMessage;
     private Button calibrationButton;
+    private Button saveButton;
 
     public static Intent newIntentForAdd(Context context) {
         return new Intent(context, AddEditItemActivity.class);
@@ -73,15 +74,14 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
         calibrationStatus = findViewById(R.id.calibrationStatus);
         calibrationMessage = findViewById(R.id.calibrationMessage);
         calibrationButton = findViewById(R.id.calibrationButton);
-        Button saveButton = findViewById(R.id.saveButton);
-        Button cancelButton = findViewById(R.id.cancelButton);
+        saveButton = findViewById(R.id.saveButton);
         Button deleteButton = findViewById(R.id.deleteButton);
 
         editingItemId = getIntent().getStringExtra(EXTRA_ITEM_ID);
         loadExistingItemIfEditing();
 
+        findViewById(R.id.backButton).setOnClickListener(v -> finish());
         saveButton.setOnClickListener(v -> onSaveClicked());
-        cancelButton.setOnClickListener(v -> finish());
         calibrationButton.setOnClickListener(v -> startCalibration());
         deleteButton.setOnClickListener(v -> confirmDelete());
     }
@@ -232,6 +232,7 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
                 );
                 calibrationMessage.setText(R.string.calibration_ready_to_save);
                 calibrationButton.setText(R.string.calibration_again);
+                renderActionPriority();
         }
     }
 
@@ -289,6 +290,33 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
             calibrationButton.setText(R.string.calibration_start);
             calibrationMessage.setText(R.string.calibration_instructions);
         }
+
+        renderActionPriority();
+        calibrationButton.setAlpha(connected ? 1.0f : 0.45f);
+    }
+
+    // New items lead with calibration. Once a range exists, saving becomes the next step.
+    private void renderActionPriority() {
+        boolean hasCalibration = pendingMinimumWeight != null
+                || (editingProfile != null && editingProfile.isCalibrated());
+
+        if (hasCalibration) {
+            stylePrimaryAction(saveButton);
+            styleSecondaryAction(calibrationButton);
+        } else {
+            stylePrimaryAction(calibrationButton);
+            styleSecondaryAction(saveButton);
+        }
+    }
+
+    private void stylePrimaryAction(Button button) {
+        button.setBackgroundResource(R.drawable.primary_button_background);
+        button.setTextColor(getColor(R.color.button_primary_text));
+    }
+
+    private void styleSecondaryAction(Button button) {
+        button.setBackgroundResource(R.drawable.secondary_button_background);
+        button.setTextColor(getColor(R.color.button_secondary_text));
     }
 
     @Override

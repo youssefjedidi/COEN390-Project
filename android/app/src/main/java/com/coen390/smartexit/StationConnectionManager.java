@@ -4,9 +4,9 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
 import android.content.Context;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 final class StationConnectionManager implements WeightStationConnection.Listener {
 
@@ -20,7 +20,8 @@ final class StationConnectionManager implements WeightStationConnection.Listener
     }
 
     private final Context appContext;
-    private final List<WeightStationConnection.Listener> listeners = new ArrayList<>();
+    private final List<WeightStationConnection.Listener> listeners =
+            new CopyOnWriteArrayList<>();
     private final DisconnectEventCoordinator disconnectEventCoordinator =
             new DisconnectEventCoordinator();
     private final DisconnectSnapshotRepository disconnectSnapshotRepository;
@@ -121,21 +122,21 @@ final class StationConnectionManager implements WeightStationConnection.Listener
     @Override
     public void onStateChanged(WeightStationConnection.State state, WeightStationConnection.Failure failure) {
         saveDisconnectSnapshot(state);
-        for (WeightStationConnection.Listener listener : new ArrayList<>(listeners)) {
+        for (WeightStationConnection.Listener listener : listeners) {
             listener.onStateChanged(state, failure);
         }
     }
 
     @Override
     public void onReadingReceived(BluetoothReading reading) {
-        for (WeightStationConnection.Listener listener : new ArrayList<>(listeners)) {
+        for (WeightStationConnection.Listener listener : listeners) {
             listener.onReadingReceived(reading);
         }
     }
 
     @Override
     public void onInvalidPayload() {
-        for (WeightStationConnection.Listener listener : new ArrayList<>(listeners)) {
+        for (WeightStationConnection.Listener listener : listeners) {
             listener.onInvalidPayload();
         }
     }

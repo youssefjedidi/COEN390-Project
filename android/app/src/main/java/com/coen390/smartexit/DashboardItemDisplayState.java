@@ -4,8 +4,9 @@ enum DashboardItemDisplayState {
     PRESENT,
     MISSING,
     UNKNOWN,
-    STILL_ON_TRAY,
-    NOT_ON_TRAY;
+    WAS_ON_TRAY,
+    WAS_NOT_ON_TRAY,
+    WAS_UNKNOWN;
 
     static DashboardItemDisplayState from(
             TrackedItemStatus itemStatus,
@@ -15,12 +16,12 @@ enum DashboardItemDisplayState {
             return liveState(itemStatus);
         }
         if (itemStatus == TrackedItemStatus.PRESENT) {
-            return STILL_ON_TRAY;
+            return WAS_ON_TRAY;
         }
         if (itemStatus == TrackedItemStatus.MISSING) {
-            return NOT_ON_TRAY;
+            return WAS_NOT_ON_TRAY;
         }
-        return UNKNOWN;
+        return WAS_UNKNOWN;
     }
 
     private static DashboardItemDisplayState liveState(TrackedItemStatus itemStatus) {

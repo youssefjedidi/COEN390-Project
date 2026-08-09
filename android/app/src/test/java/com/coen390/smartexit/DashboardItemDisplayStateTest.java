@@ -23,25 +23,25 @@ public class DashboardItemDisplayStateTest {
     }
 
     @Test
-    public void cachedDashboardWarnsAboutItemsStillOnTheTray() {
+    public void savedDashboardKeepsPreviouslyPresentItemsDistinctFromLiveData() {
         assertEquals(
-                DashboardItemDisplayState.STILL_ON_TRAY,
+                DashboardItemDisplayState.WAS_ON_TRAY,
                 DashboardItemDisplayState.from(TrackedItemStatus.PRESENT, true)
         );
     }
 
     @Test
-    public void cachedDashboardDoesNotCallAnAbsentItemMissing() {
+    public void savedDashboardKeepsPreviouslyAbsentItemsDistinctFromLiveData() {
         assertEquals(
-                DashboardItemDisplayState.NOT_ON_TRAY,
+                DashboardItemDisplayState.WAS_NOT_ON_TRAY,
                 DashboardItemDisplayState.from(TrackedItemStatus.MISSING, true)
         );
     }
 
     @Test
-    public void cachedDashboardKeepsUncertainItemsUnknown() {
+    public void savedDashboardKeepsUncertainItemsDistinctFromLiveData() {
         assertEquals(
-                DashboardItemDisplayState.UNKNOWN,
+                DashboardItemDisplayState.WAS_UNKNOWN,
                 DashboardItemDisplayState.from(TrackedItemStatus.UNKNOWN, true)
         );
     }

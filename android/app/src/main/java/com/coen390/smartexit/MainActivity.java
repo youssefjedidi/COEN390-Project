@@ -31,24 +31,18 @@ public class MainActivity extends Activity {
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("h:mm a", Locale.getDefault());
 
     private TextView stationStatus;
-    private TextView readingState;
-    private TextView weightValue;
-    private TextView lastUpdate;
-    private TextView readingDetail;
-    private TextView dataSourceLabel;
+    private TextView connectionDetail;
+    private View connectionProgress;
     private Button bluetoothActionButton;
-    private Button addItemButton;
+    private View addItemButton;
     private View dashboardEmptyState;
     private View dashboardItemGrid;
     private View dashboardGridSecondRow;
-    private TextView trackedItemCount;
     private TextView dashboardDataStatus;
     private View[] itemRows;
     private TextView[] itemNames;
     private TextView[] itemStatuses;
     private TextView[] itemDetails;
-    private String[] currentItemIds = new String[MAX_DASHBOARD_ITEMS];
-    private WeightDisplayState currentDisplayState;
     private DashboardStateCoordinator dashboardStateCoordinator;
     private boolean ambiguousDialogVisible;
     private ItemProfileRepository itemProfileRepository;
@@ -70,11 +64,8 @@ public class MainActivity extends Activity {
         showDisconnectSnapshot = isDisconnectSnapshotIntent(getIntent());
 
         stationStatus = findViewById(R.id.stationStatus);
-        readingState = findViewById(R.id.readingState);
-        weightValue = findViewById(R.id.weightValue);
-        lastUpdate = findViewById(R.id.lastUpdate);
-        readingDetail = findViewById(R.id.readingDetail);
-        dataSourceLabel = findViewById(R.id.dataSourceLabel);
+        connectionDetail = findViewById(R.id.connectionDetail);
+        connectionProgress = findViewById(R.id.connectionProgress);
         bluetoothActionButton = findViewById(R.id.bluetoothActionButton);
 
         itemProfileRepository = new ItemProfileRepository(this);
@@ -99,9 +90,7 @@ public class MainActivity extends Activity {
 
             @Override
             public void onInvalidPayload() {
-                runOnUiThread(() -> readingDetail.setText(
-                        R.string.reading_detail_invalid_payload
-                ));
+                // A malformed packet is ignored. The next valid four-plate cycle updates the dashboard.
             }
         };
         connectionManager.addListener(connectionListener);
@@ -256,16 +245,11 @@ public class MainActivity extends Activity {
     }
 
     private void showBluetoothSetupState(int stationText, int detailText, int buttonText) {
-        currentDisplayState = null;
-
+        showIdleConnectionPresentation();
         stationStatus.setText(stationText);
         stationStatus.setBackgroundResource(R.drawable.status_offline_background);
         stationStatus.setTextColor(getColor(R.color.status_offline_text));
-        readingState.setText(R.string.reading_state_waiting);
-        weightValue.setText(R.string.empty_weight);
-        lastUpdate.setText(R.string.no_data_yet);
-        readingDetail.setText(detailText);
-        dataSourceLabel.setText(R.string.data_source_waiting);
+        connectionDetail.setText(detailText);
 
         if (buttonText == 0) {
             bluetoothActionButton.setVisibility(View.GONE);
@@ -277,21 +261,13 @@ public class MainActivity extends Activity {
     }
 
     private void showBluetoothReadyState() {
+        showIdleConnectionPresentation();
         bluetoothActionButton.setText(R.string.connect_to_station);
         bluetoothActionButton.setVisibility(View.VISIBLE);
-
-        if (currentDisplayState != null) {
-            return;
-        }
-
-        stationStatus.setText(R.string.station_waiting);
-        stationStatus.setBackgroundResource(R.drawable.status_waiting_background);
-        stationStatus.setTextColor(getColor(R.color.status_waiting_text));
-        readingState.setText(R.string.reading_state_waiting);
-        weightValue.setText(R.string.empty_weight);
-        lastUpdate.setText(R.string.no_data_yet);
-        readingDetail.setText(R.string.reading_detail_bluetooth_ready);
-        dataSourceLabel.setText(R.string.data_source_waiting);
+        stationStatus.setText(R.string.station_disconnected);
+        stationStatus.setBackgroundResource(R.drawable.status_neutral_background);
+        stationStatus.setTextColor(getColor(R.color.status_neutral_text));
+        connectionDetail.setText(R.string.reading_detail_bluetooth_ready);
     }
 
     private void renderConnectionState(
@@ -299,23 +275,14 @@ public class MainActivity extends Activity {
             WeightStationConnection.Failure failure
     ) {
         if (state == WeightStationConnection.State.SCANNING) {
-            showConnectionState(
-                    R.string.station_scanning,
-                    R.string.reading_detail_station_scanning,
-                    R.string.cancel_connection,
-                    R.drawable.status_waiting_background,
-                    R.color.status_waiting_text
-            );
+            showPendingConnectionState(R.string.station_scanning);
             return;
         }
 
         if (state == WeightStationConnection.State.CONNECTING) {
-            showConnectionState(
+            showPendingConnectionState(
                     R.string.station_connecting,
-                    R.string.reading_detail_station_connecting,
-                    R.string.cancel_connection,
-                    R.drawable.status_waiting_background,
-                    R.color.status_waiting_text
+                    R.string.reading_detail_station_connecting
             );
             return;
         }
@@ -328,6 +295,8 @@ public class MainActivity extends Activity {
                     R.drawable.status_connected_background,
                     R.color.status_connected_text
             );
+            connectionDetail.setVisibility(View.GONE);
+            showSecondaryBluetoothAction();
             return;
         }
 
@@ -346,9 +315,9 @@ public class MainActivity extends Activity {
             showConnectionState(
                     R.string.station_disconnected,
                     R.string.reading_detail_station_disconnected,
-                    R.string.reconnect_station,
-                    R.drawable.status_offline_background,
-                    R.color.status_offline_text
+                    R.string.connect_to_station,
+                    R.drawable.status_neutral_background,
+                    R.color.status_neutral_text
             );
             return;
         }
@@ -363,12 +332,42 @@ public class MainActivity extends Activity {
             int background,
             int textColor
     ) {
+        showIdleConnectionPresentation();
         stationStatus.setText(stationText);
         stationStatus.setBackgroundResource(background);
         stationStatus.setTextColor(getColor(textColor));
-        readingDetail.setText(detailText);
+        connectionDetail.setText(detailText);
         bluetoothActionButton.setText(buttonText);
         bluetoothActionButton.setVisibility(View.VISIBLE);
+    }
+
+    private void showPendingConnectionState(int stationText, int detailText) {
+        showConnectionState(
+                stationText,
+                detailText,
+                R.string.cancel_connection,
+                R.drawable.status_waiting_background,
+                R.color.status_waiting_text
+        );
+        connectionProgress.setVisibility(View.VISIBLE);
+        showSecondaryBluetoothAction();
+    }
+
+    private void showPendingConnectionState(int stationText) {
+        showPendingConnectionState(stationText, R.string.reading_detail_waiting);
+        connectionDetail.setVisibility(View.GONE);
+    }
+
+    private void showIdleConnectionPresentation() {
+        connectionProgress.setVisibility(View.GONE);
+        connectionDetail.setVisibility(View.VISIBLE);
+        bluetoothActionButton.setBackgroundResource(R.drawable.primary_button_background);
+        bluetoothActionButton.setTextColor(getColor(R.color.button_primary_text));
+    }
+
+    private void showSecondaryBluetoothAction() {
+        bluetoothActionButton.setBackgroundResource(R.drawable.secondary_button_background);
+        bluetoothActionButton.setTextColor(getColor(R.color.button_secondary_text));
     }
 
     private int connectionFailureText(WeightStationConnection.Failure failure) {
@@ -394,7 +393,6 @@ public class MainActivity extends Activity {
         dashboardEmptyState = findViewById(R.id.dashboardEmptyState);
         dashboardItemGrid = findViewById(R.id.dashboardItemGrid);
         dashboardGridSecondRow = findViewById(R.id.dashboardGridSecondRow);
-        trackedItemCount = findViewById(R.id.trackedItemCount);
         dashboardDataStatus = findViewById(R.id.dashboardDataStatus);
 
         itemRows = new View[] {
@@ -403,26 +401,15 @@ public class MainActivity extends Activity {
                 findViewById(R.id.itemRow3),
                 findViewById(R.id.itemRow4)
         };
-        itemNames = new TextView[] {
-                findViewById(R.id.itemName1),
-                findViewById(R.id.itemName2),
-                findViewById(R.id.itemName3),
-                findViewById(R.id.itemName4)
-        };
-        itemStatuses = new TextView[] {
-                findViewById(R.id.itemStatus1),
-                findViewById(R.id.itemStatus2),
-                findViewById(R.id.itemStatus3),
-                findViewById(R.id.itemStatus4)
-        };
-        itemDetails = new TextView[] {
-                findViewById(R.id.itemDetail1),
-                findViewById(R.id.itemDetail2),
-                findViewById(R.id.itemDetail3),
-                findViewById(R.id.itemDetail4)
-        };
+        itemNames = new TextView[MAX_DASHBOARD_ITEMS];
+        itemStatuses = new TextView[MAX_DASHBOARD_ITEMS];
+        itemDetails = new TextView[MAX_DASHBOARD_ITEMS];
+
         for (int i = 0; i < MAX_DASHBOARD_ITEMS; i++) {
             int index = i;
+            itemNames[index] = itemRows[index].findViewById(R.id.itemName);
+            itemStatuses[index] = itemRows[index].findViewById(R.id.itemStatus);
+            itemDetails[index] = itemRows[index].findViewById(R.id.itemDetail);
             itemRows[index].setOnClickListener(v -> openItemDetails(index));
         }
     }
@@ -474,13 +461,6 @@ public class MainActivity extends Activity {
 
     private void renderDashboard(List<TrackedItemState> states, boolean cachedSnapshot) {
         int visibleCount = Math.min(states.size(), MAX_DASHBOARD_ITEMS);
-        trackedItemCount.setText(
-                getString(
-                        R.string.tracked_item_count_format,
-                        visibleCount,
-                        MAX_DASHBOARD_ITEMS
-                )
-        );
         dashboardEmptyState.setVisibility(visibleCount == 0 ? View.VISIBLE : View.GONE);
         dashboardItemGrid.setVisibility(visibleCount == 0 ? View.GONE : View.VISIBLE);
         dashboardGridSecondRow.setVisibility(
@@ -490,7 +470,6 @@ public class MainActivity extends Activity {
         for (int index = 0; index < MAX_DASHBOARD_ITEMS; index++) {
             if (index >= visibleCount) {
                 itemRows[index].setVisibility(View.INVISIBLE);
-                currentItemIds[index] = null;
                 continue;
             }
 
@@ -500,9 +479,9 @@ public class MainActivity extends Activity {
     }
 
     private void openItemDetails(int index) {
-        String itemId = currentItemIds[index];
-        if (itemId != null) {
-            startActivity(AddEditItemActivity.newIntentForEdit(this, itemId));
+        if (index < visibleProfiles.size()) {
+            ItemProfile profile = visibleProfiles.get(index);
+            startActivity(AddEditItemActivity.newIntentForEdit(this, profile.getId()));
         }
     }
 
@@ -513,10 +492,16 @@ public class MainActivity extends Activity {
     ) {
         DashboardItemDisplayState displayState =
                 DashboardItemDisplayState.from(state.getStatus(), cachedSnapshot);
-        currentItemIds[index] = state.getItem().getId();
         itemNames[index].setText(state.getItem().getName());
+        itemRows[index].setContentDescription(
+                getString(R.string.edit_item_accessibility, state.getItem().getName())
+        );
         itemStatuses[index].setText(itemStatusText(displayState));
-        itemDetails[index].setText(itemDetailText(state));
+        String detailText = itemDetailText(state, displayState);
+        itemDetails[index].setVisibility(detailText == null ? View.INVISIBLE : View.VISIBLE);
+        if (detailText != null) {
+            itemDetails[index].setText(detailText);
+        }
 
         if (displayState == DashboardItemDisplayState.PRESENT) {
             styleItemStatus(
@@ -530,13 +515,19 @@ public class MainActivity extends Activity {
                     R.drawable.status_missing_background,
                     R.color.status_missing_text
             );
-        } else if (displayState == DashboardItemDisplayState.STILL_ON_TRAY) {
+        } else if (displayState == DashboardItemDisplayState.WAS_ON_TRAY) {
             styleItemStatus(
                     itemStatuses[index],
                     R.drawable.status_offline_background,
                     R.color.status_offline_text
             );
-        } else if (displayState == DashboardItemDisplayState.NOT_ON_TRAY) {
+        } else if (displayState == DashboardItemDisplayState.WAS_NOT_ON_TRAY) {
+            styleItemStatus(
+                    itemStatuses[index],
+                    R.drawable.status_waiting_background,
+                    R.color.status_waiting_text
+            );
+        } else if (displayState == DashboardItemDisplayState.WAS_UNKNOWN) {
             styleItemStatus(
                     itemStatuses[index],
                     R.drawable.status_neutral_background,
@@ -558,25 +549,34 @@ public class MainActivity extends Activity {
         if (status == DashboardItemDisplayState.MISSING) {
             return R.string.item_status_missing;
         }
-        if (status == DashboardItemDisplayState.STILL_ON_TRAY) {
-            return R.string.item_status_still_on_tray;
+        if (status == DashboardItemDisplayState.WAS_ON_TRAY) {
+            return R.string.item_status_was_on_tray;
         }
-        if (status == DashboardItemDisplayState.NOT_ON_TRAY) {
-            return R.string.item_status_not_on_tray;
+        if (status == DashboardItemDisplayState.WAS_NOT_ON_TRAY) {
+            return R.string.item_status_was_not_on_tray;
+        }
+        if (status == DashboardItemDisplayState.WAS_UNKNOWN) {
+            return R.string.item_status_was_unknown;
         }
         return R.string.item_status_unknown;
     }
 
-    private String itemDetailText(TrackedItemState state) {
+    private String itemDetailText(
+            TrackedItemState state,
+            DashboardItemDisplayState displayState
+    ) {
         if (state.getStatus() == TrackedItemStatus.PRESENT
                 && state.getPlateNumber() != null) {
             return getString(R.string.item_detail_plate, state.getPlateNumber());
         }
         if (state.getStatus() == TrackedItemStatus.MISSING) {
-            return getString(R.string.item_detail_missing);
+            return null;
         }
         if (!state.getItem().isCalibrated()) {
             return getString(R.string.item_detail_calibration_required);
+        }
+        if (displayState == DashboardItemDisplayState.WAS_UNKNOWN) {
+            return getString(R.string.item_detail_was_unknown);
         }
         return getString(R.string.item_detail_waiting);
     }
@@ -587,33 +587,7 @@ public class MainActivity extends Activity {
     }
 
     private void showBluetoothReading(BluetoothReading reading) {
-        runOnUiThread(() -> {
-            renderLatestWeightReading(reading);
-            updateDashboardFromReading(reading);
-        });
-    }
-
-    private void renderLatestWeightReading(BluetoothReading reading) {
-        if (reading.getStatus() == BluetoothReading.Status.NO_LOAD) {
-            renderState(WeightDisplayState.liveClear(currentTime()));
-            return;
-        }
-
-        if (reading.getStatus() == BluetoothReading.Status.ERROR) {
-            readingDetail.setText(R.string.reading_detail_sensor_error);
-            return;
-        }
-
-        String label = reading.hasPlateNumber()
-                ? getString(R.string.reading_label_plate, reading.getPlateNumber())
-                : getString(R.string.reading_label_tray);
-        renderState(
-                WeightDisplayState.liveItem(
-                        label,
-                        Math.round(reading.getWeightGrams()),
-                        currentTime()
-                )
-        );
+        runOnUiThread(() -> updateDashboardFromReading(reading));
     }
 
     private void updateDashboardFromReading(BluetoothReading reading) {
@@ -716,7 +690,6 @@ public class MainActivity extends Activity {
 
         if (state == WeightStationConnection.State.DISCONNECTED) {
             showSavedDisconnectSnapshot();
-            markLatestReadingOffline();
         }
     }
 
@@ -751,154 +724,7 @@ public class MainActivity extends Activity {
         );
     }
 
-    private void markLatestReadingOffline() {
-        if (currentDisplayState != null && currentDisplayState.source == DataSource.LIVE) {
-            renderState(currentDisplayState.asOffline());
-        }
-    }
-
-    // BLE callbacks may arrive on a background thread.
-    void onBluetoothWeightReading(int weightGrams, String label) {
-        runOnUiThread(() -> renderState(WeightDisplayState.liveItem(label, weightGrams, currentTime())));
-    }
-
-    void onBluetoothTrayClear() {
-        runOnUiThread(() -> renderState(WeightDisplayState.liveClear(currentTime())));
-    }
-
-    private void renderState(WeightDisplayState state) {
-        currentDisplayState = state;
-        renderStationStatus(state.source);
-
-        if (state.weightGrams != null) {
-            weightValue.setText(getString(R.string.weight_format, state.weightGrams));
-        }
-
-        if (state.source == DataSource.OFFLINE) {
-            lastUpdate.setText(getString(R.string.last_checked_format, state.displayTime));
-        } else {
-            lastUpdate.setText(getString(R.string.last_update_format, state.displayTime));
-        }
-
-        dataSourceLabel.setText(dataSourceText(state.source));
-        readingState.setText(readingStateText(state.status, state.source));
-        readingDetail.setText(readingDetailText(state));
-    }
-
-    private void renderStationStatus(DataSource source) {
-        if (source == DataSource.OFFLINE) {
-            stationStatus.setText(R.string.station_offline);
-            stationStatus.setBackgroundResource(R.drawable.status_offline_background);
-            stationStatus.setTextColor(getColor(R.color.status_offline_text));
-            return;
-        }
-
-        stationStatus.setText(R.string.station_live);
-        stationStatus.setBackgroundResource(R.drawable.status_connected_background);
-        stationStatus.setTextColor(getColor(R.color.status_connected_text));
-    }
-
-    private int dataSourceText(DataSource source) {
-        if (source == DataSource.LIVE) {
-            return R.string.data_source_live;
-        }
-        return R.string.data_source_offline;
-    }
-
-    private int readingStateText(TrayStatus status, DataSource source) {
-        if (source == DataSource.OFFLINE) {
-            return R.string.reading_state_offline;
-        }
-        if (status == TrayStatus.TRAY_CLEAR) {
-            return R.string.reading_state_clear;
-        }
-        if (status == TrayStatus.ITEM_PRESENT) {
-            return R.string.reading_state_item_detected;
-        }
-        return R.string.reading_state_waiting;
-    }
-
-    private String readingDetailText(WeightDisplayState state) {
-        if (state.source == DataSource.OFFLINE) {
-            return getString(R.string.reading_detail_offline);
-        }
-        if (state.status == TrayStatus.TRAY_CLEAR) {
-            return getString(R.string.reading_detail_clear);
-        }
-        if (state.source == DataSource.LIVE) {
-            return getString(R.string.reading_detail_live_item, state.itemLabel);
-        }
-        return getString(R.string.reading_detail_offline);
-    }
-
-    private String currentTime() {
-        return formatTime(System.currentTimeMillis());
-    }
-
     private String formatTime(long timestampMillis) {
         return timeFormat.format(new Date(timestampMillis));
-    }
-
-    private enum DataSource {
-        LIVE,
-        OFFLINE
-    }
-
-    private enum TrayStatus {
-        ITEM_PRESENT,
-        TRAY_CLEAR,
-        UNKNOWN
-    }
-
-    private static class WeightDisplayState {
-        final DataSource source;
-        final TrayStatus status;
-        final Integer weightGrams;
-        final String itemLabel;
-        final String displayTime;
-
-        private WeightDisplayState(
-                DataSource source,
-                TrayStatus status,
-                Integer weightGrams,
-                String itemLabel,
-                String displayTime
-        ) {
-            this.source = source;
-            this.status = status;
-            this.weightGrams = weightGrams;
-            this.itemLabel = itemLabel;
-            this.displayTime = displayTime;
-        }
-
-        static WeightDisplayState liveItem(String label, int weightGrams, String displayTime) {
-            return item(DataSource.LIVE, label, weightGrams, displayTime);
-        }
-
-        static WeightDisplayState liveClear(String displayTime) {
-            return clear(DataSource.LIVE, displayTime);
-        }
-
-        static WeightDisplayState offline(String displayTime) {
-            return new WeightDisplayState(DataSource.OFFLINE, TrayStatus.UNKNOWN, null, "", displayTime);
-        }
-
-        WeightDisplayState asOffline() {
-            return new WeightDisplayState(
-                    DataSource.OFFLINE,
-                    status,
-                    weightGrams,
-                    itemLabel,
-                    displayTime
-            );
-        }
-
-        private static WeightDisplayState item(DataSource source, String label, int weightGrams, String displayTime) {
-            return new WeightDisplayState(source, TrayStatus.ITEM_PRESENT, weightGrams, label, displayTime);
-        }
-
-        private static WeightDisplayState clear(DataSource source, String displayTime) {
-            return new WeightDisplayState(source, TrayStatus.TRAY_CLEAR, 0, "", displayTime);
-        }
     }
 }
