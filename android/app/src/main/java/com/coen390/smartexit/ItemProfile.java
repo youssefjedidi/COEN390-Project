@@ -14,6 +14,14 @@ public final class ItemProfile {
     }
 
     public ItemProfile(String id, String name, Double minWeightGrams, Double maxWeightGrams) {
+        if ((minWeightGrams == null) != (maxWeightGrams == null)) {
+            throw new IllegalArgumentException(
+                    "A calibrated item needs both weight boundaries"
+            );
+        }
+        if (minWeightGrams != null) {
+            validateWeightRange(minWeightGrams, maxWeightGrams);
+        }
         this.id = id;
         this.name = name;
         this.minWeightGrams = minWeightGrams;
@@ -32,11 +40,20 @@ public final class ItemProfile {
     public Double getMaxWeightGrams() { return maxWeightGrams; }
 
     public void setWeightRange(double minGrams, double maxGrams) {
-        if (minGrams > maxGrams) {
-            throw new IllegalArgumentException("minGrams must be <= maxGrams");
-        }
+        validateWeightRange(minGrams, maxGrams);
         this.minWeightGrams = minGrams;
         this.maxWeightGrams = maxGrams;
+    }
+
+    private static void validateWeightRange(double minGrams, double maxGrams) {
+        if (!Double.isFinite(minGrams) || !Double.isFinite(maxGrams)) {
+            throw new IllegalArgumentException("Weight boundaries must be finite");
+        }
+        if (minGrams < 0.0 || minGrams > maxGrams) {
+            throw new IllegalArgumentException(
+                    "Weight boundaries must be non-negative and ordered"
+            );
+        }
     }
 
     public boolean matches(double readingGrams) {

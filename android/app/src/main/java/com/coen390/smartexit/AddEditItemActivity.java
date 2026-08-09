@@ -245,6 +245,7 @@ public class AddEditItemActivity extends Activity implements WeightStationConnec
                 calibrationMessage.setText(R.string.calibration_multiple_plates_changed);
                 return;
             case SENSOR_ERROR:
+                detectingPlate = false;
                 calibrationMessage.setText(R.string.calibration_sensor_error);
                 return;
             case DETECTED:

@@ -132,6 +132,7 @@ final class CalibrationSampleCollector {
 
         if (reading.getStatus() == BluetoothReading.Status.ERROR) {
             sampleCount = 0;
+            active = false;
             return Update.inProgress(Status.SENSOR_ERROR, sampleCount);
         }
 

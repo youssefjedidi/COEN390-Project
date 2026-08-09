@@ -136,6 +136,11 @@ public class CalibrationSampleCollectorTest {
 
         assertEquals(CalibrationSampleCollector.Status.SENSOR_ERROR, update.getStatus());
         assertEquals(0, collector.getSampleCount());
+        assertFalse(collector.isActive());
+        assertEquals(
+                CalibrationSampleCollector.Status.IGNORED,
+                collector.add(okReading(2, 80.0f)).getStatus()
+        );
     }
 
     @Test
