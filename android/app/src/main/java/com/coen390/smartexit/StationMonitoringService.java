@@ -22,16 +22,16 @@ public final class StationMonitoringService extends Service
 
     private StationConnectionManager connectionManager;
 
-    static void start(Context context) {
+    static void startMonitoring(Context context) {
         Intent intent = new Intent(context, StationMonitoringService.class)
                 .setAction(ACTION_START);
         context.startForegroundService(intent);
     }
 
-    static void stop(Context context) {
+    static void stopMonitoring(Context context) {
         Intent intent = new Intent(context, StationMonitoringService.class)
                 .setAction(ACTION_STOP);
-        context.startForegroundService(intent);
+        context.startService(intent);
     }
 
     @Override
@@ -44,15 +44,18 @@ public final class StationMonitoringService extends Service
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        startInForeground(R.string.monitoring_starting);
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
-            connectionManager.disconnect();
-            stopForeground(STOP_FOREGROUND_REMOVE);
-            stopSelf();
+            stopMonitoringService(startId);
             return START_NOT_STICKY;
         }
 
-        connectionManager.connect();
+        if (!BluetoothPermissionHelper.hasRequiredPermissions(this)) {
+            pauseForMissingPermission(startId);
+            return START_NOT_STICKY;
+        }
+
+        startInForeground(R.string.monitoring_starting);
+        connectionManager.startMonitoring();
         updateNotification(
                 connectionManager.getMonitoringState(),
                 connectionManager.getMonitoringPauseReason()
@@ -76,11 +79,20 @@ public final class StationMonitoringService extends Service
             MonitoringLifecycle.State state,
             MonitoringLifecycle.PauseReason pauseReason
     ) {
+        if (state == MonitoringLifecycle.State.STOPPED) {
+            return;
+        }
+        if (state == MonitoringLifecycle.State.PAUSED
+                && pauseReason == MonitoringLifecycle.PauseReason.PERMISSION_UNAVAILABLE) {
+            stopForeground(STOP_FOREGROUND_REMOVE);
+            stopSelf();
+            return;
+        }
         updateNotification(state, pauseReason);
     }
 
-    private void startInForeground(int message) {
-        Notification notification = buildNotification(message);
+    private void startInForeground(int messageResId) {
+        Notification notification = buildNotification(messageResId);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                     NOTIFICATION_ID,
@@ -96,32 +108,64 @@ public final class StationMonitoringService extends Service
             MonitoringLifecycle.State state,
             MonitoringLifecycle.PauseReason pauseReason
     ) {
-        int message = R.string.monitoring_starting;
-        if (state == MonitoringLifecycle.State.MONITORING) {
-            message = R.string.monitoring_connected;
-        } else if (state == MonitoringLifecycle.State.RECONNECTING) {
-            message = R.string.monitoring_reconnecting;
-        } else if (state == MonitoringLifecycle.State.PAUSED) {
-            message = monitoringPauseText(pauseReason);
-        }
-
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) {
-            manager.notify(NOTIFICATION_ID, buildNotification(message));
+            manager.notify(
+                    NOTIFICATION_ID,
+                    buildNotification(notificationTextFor(state, pauseReason))
+            );
         }
     }
 
-    private int monitoringPauseText(MonitoringLifecycle.PauseReason reason) {
-        if (reason == MonitoringLifecycle.PauseReason.BLUETOOTH_OFF) {
-            return R.string.monitoring_paused_bluetooth;
+    private int notificationTextFor(
+            MonitoringLifecycle.State state,
+            MonitoringLifecycle.PauseReason pauseReason
+    ) {
+        switch (state) {
+            case MONITORING:
+                return R.string.monitoring_connected;
+            case RECONNECTING:
+                return R.string.monitoring_reconnecting;
+            case PAUSED:
+                return monitoringPauseTextFor(pauseReason);
+            case STARTING:
+            case STOPPED:
+            default:
+                return R.string.monitoring_starting;
         }
-        if (reason == MonitoringLifecycle.PauseReason.PERMISSION_UNAVAILABLE) {
-            return R.string.monitoring_paused_permission;
-        }
-        return R.string.monitoring_paused_unavailable;
     }
 
-    private Notification buildNotification(int message) {
+    private int monitoringPauseTextFor(MonitoringLifecycle.PauseReason reason) {
+        if (reason == null) {
+            return R.string.monitoring_paused_unavailable;
+        }
+
+        switch (reason) {
+            case BLUETOOTH_OFF:
+                return R.string.monitoring_paused_bluetooth;
+            case PERMISSION_UNAVAILABLE:
+                return R.string.monitoring_paused_permission;
+            case CONNECTION_UNAVAILABLE:
+            default:
+                return R.string.monitoring_paused_unavailable;
+        }
+    }
+
+    private void stopMonitoringService(int startId) {
+        connectionManager.stopMonitoring();
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        stopSelf(startId);
+    }
+
+    private void pauseForMissingPermission(int startId) {
+        connectionManager.pauseMonitoring(
+                MonitoringLifecycle.PauseReason.PERMISSION_UNAVAILABLE
+        );
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        stopSelf(startId);
+    }
+
+    private Notification buildNotification(int messageResId) {
         Intent openApp = new Intent(this, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent contentIntent = PendingIntent.getActivity(
@@ -134,7 +178,7 @@ public final class StationMonitoringService extends Service
         return new Notification.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_station_monitoring)
                 .setContentTitle(getString(R.string.monitoring_notification_title))
-                .setContentText(getString(message))
+                .setContentText(getString(messageResId))
                 .setContentIntent(contentIntent)
                 .setOngoing(true)
                 .setCategory(Notification.CATEGORY_SERVICE)

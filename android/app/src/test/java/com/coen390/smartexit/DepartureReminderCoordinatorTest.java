@@ -15,20 +15,20 @@ public class DepartureReminderCoordinatorTest {
 
     private final ItemProfile keys = new ItemProfile("keys", "Keys", 35.0, 45.0);
     private FakeScheduler scheduler;
-    private SnapshotRecorder snapshots;
-    private ReminderRecorder reminders;
+    private SnapshotRecorder snapshotRecorder;
+    private ReminderRecorder reminderRecorder;
     private DepartureReminderCoordinator coordinator;
 
     @Before
     public void setUp() {
         scheduler = new FakeScheduler();
-        snapshots = new SnapshotRecorder();
-        reminders = new ReminderRecorder();
+        snapshotRecorder = new SnapshotRecorder();
+        reminderRecorder = new ReminderRecorder();
         coordinator = new DepartureReminderCoordinator(
                 GRACE_PERIOD_MS,
                 scheduler,
-                snapshots,
-                reminders
+                snapshotRecorder,
+                reminderRecorder
         );
     }
 
@@ -39,10 +39,10 @@ public class DepartureReminderCoordinatorTest {
 
         coordinator.onLinkLost();
 
-        assertSame(snapshot, snapshots.lastSaved);
+        assertSame(snapshot, snapshotRecorder.lastSaved);
         assertEquals(GRACE_PERIOD_MS, scheduler.delayMillis);
         assertTrue(scheduler.hasPendingTask());
-        assertEquals(0, reminders.count);
+        assertEquals(0, reminderRecorder.count);
     }
 
     @Test
@@ -54,7 +54,7 @@ public class DepartureReminderCoordinatorTest {
         scheduler.runPendingTask();
 
         assertFalse(scheduler.hasPendingTask());
-        assertEquals(0, reminders.count);
+        assertEquals(0, reminderRecorder.count);
     }
 
     @Test
@@ -66,8 +66,8 @@ public class DepartureReminderCoordinatorTest {
         scheduler.runPendingTask();
         coordinator.onLinkLost();
 
-        assertEquals(1, reminders.count);
-        assertSame(snapshot, reminders.lastSnapshot);
+        assertEquals(1, reminderRecorder.count);
+        assertSame(snapshot, reminderRecorder.lastSnapshot);
         assertFalse(scheduler.hasPendingTask());
     }
 
@@ -94,7 +94,7 @@ public class DepartureReminderCoordinatorTest {
         coordinator.cancelDeparture();
         scheduler.runPendingTask();
 
-        assertEquals(0, reminders.count);
+        assertEquals(0, reminderRecorder.count);
     }
 
     @Test
@@ -111,7 +111,7 @@ public class DepartureReminderCoordinatorTest {
         coordinator.onLinkLost();
 
         assertFalse(scheduler.hasPendingTask());
-        assertEquals(0, reminders.count);
+        assertEquals(0, reminderRecorder.count);
     }
 
     private DisconnectSnapshot snapshotWithKeys(long timestampMillis) {

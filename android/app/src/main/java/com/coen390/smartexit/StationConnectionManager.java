@@ -98,21 +98,22 @@ final class StationConnectionManager implements WeightStationConnection.Listener
         return connection == null ? null : connection.getFailure();
     }
 
-    void connect() {
+    void startMonitoring() {
         monitoringPreferences.setMonitoringEnabled(true);
         if (getState() == WeightStationConnection.State.CONNECTED) {
             monitoringLifecycle.connected();
             notifyMonitoringListeners();
             return;
         }
+        clearLiveDashboardSnapshot();
         monitoringLifecycle.start();
         notifyMonitoringListeners();
         connectToStation();
     }
 
     private void connectToStation() {
-        WeightStationConnection conn = getOrCreateConnection();
-        if (conn == null) {
+        WeightStationConnection stationConnection = getOrCreateConnection();
+        if (stationConnection == null) {
             monitoringLifecycle.pause(MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE);
             notifyMonitoringListeners();
             return;
@@ -120,14 +121,15 @@ final class StationConnectionManager implements WeightStationConnection.Listener
 
         String knownAddress = monitoringPreferences.getKnownStationAddress();
         if (knownAddress == null) {
-            conn.connect();
+            stationConnection.connect();
         } else {
-            conn.connectKnown(knownAddress);
+            stationConnection.connectKnown(knownAddress);
         }
     }
 
-    void disconnect() {
+    void stopMonitoring() {
         monitoringPreferences.setMonitoringEnabled(false);
+        clearLiveDashboardSnapshot();
         monitoringLifecycle.disconnect(MonitoringLifecycle.DisconnectCause.MANUAL_STOP);
         departureReminder.cancelDeparture();
         notifyMonitoringListeners();
@@ -154,6 +156,7 @@ final class StationConnectionManager implements WeightStationConnection.Listener
                 && monitoringLifecycle.getPauseReason() == reason) {
             return;
         }
+        clearLiveDashboardSnapshot();
         monitoringLifecycle.pause(reason);
         departureReminder.cancelDeparture();
         if (connection != null) {
@@ -237,35 +240,19 @@ final class StationConnectionManager implements WeightStationConnection.Listener
     }
 
     @Override
-    public void onStateChanged(WeightStationConnection.State state, WeightStationConnection.Failure failure) {
+    public void onStateChanged(
+            WeightStationConnection.State state,
+            WeightStationConnection.Failure failure
+    ) {
         if (state == WeightStationConnection.State.CONNECTED) {
-            String address = connection == null ? null : connection.getConnectedStationAddress();
-            if (address != null) {
-                monitoringPreferences.rememberStation(address);
-                monitoringPreferences.setMonitoringEnabled(true);
-            }
-            monitoringLifecycle.connected();
-            departureReminder.onReconnected();
+            handleStationConnected();
         }
-        for (WeightStationConnection.Listener listener : listeners) {
-            listener.onStateChanged(state, failure);
-        }
+        notifyConnectionListeners(state, failure);
 
-        if (state == WeightStationConnection.State.DISCONNECTED
-                && monitoringPreferences.isMonitoringEnabled()) {
-            MonitoringLifecycle.DisconnectCause cause = disconnectCause();
-            if (monitoringLifecycle.disconnect(cause)) {
-                departureReminder.onLinkLost();
-            }
-            if (cause == MonitoringLifecycle.DisconnectCause.LINK_LOSS) {
-                connectToStation();
-            } else {
-                departureReminder.cancelDeparture();
-            }
-        } else if (state == WeightStationConnection.State.FAILED
-                && monitoringPreferences.isMonitoringEnabled()) {
-            monitoringLifecycle.pause(pauseReasonForAvailability());
-            departureReminder.cancelDeparture();
+        if (state == WeightStationConnection.State.DISCONNECTED) {
+            handleStationDisconnected();
+        } else if (state == WeightStationConnection.State.FAILED) {
+            handleConnectionFailure();
         }
         notifyMonitoringListeners();
     }
@@ -298,6 +285,63 @@ final class StationConnectionManager implements WeightStationConnection.Listener
         }
     }
 
+    private synchronized void clearLiveDashboardSnapshot() {
+        latestDashboardSnapshot = null;
+    }
+
+    private void handleStationConnected() {
+        readingProcessor.resetCycle();
+        clearLiveDashboardSnapshot();
+
+        String stationAddress = connection == null
+                ? null
+                : connection.getConnectedStationAddress();
+        if (stationAddress != null) {
+            monitoringPreferences.rememberStation(stationAddress);
+            monitoringPreferences.setMonitoringEnabled(true);
+        }
+
+        monitoringLifecycle.connected();
+        departureReminder.onReconnected();
+    }
+
+    private void handleStationDisconnected() {
+        if (!monitoringPreferences.isMonitoringEnabled()) {
+            return;
+        }
+
+        clearLiveDashboardSnapshot();
+        MonitoringLifecycle.DisconnectCause cause = getDisconnectCause();
+        if (monitoringLifecycle.disconnect(cause)) {
+            departureReminder.onLinkLost();
+        }
+
+        if (cause == MonitoringLifecycle.DisconnectCause.LINK_LOSS) {
+            connectToStation();
+        } else {
+            departureReminder.cancelDeparture();
+        }
+    }
+
+    private void handleConnectionFailure() {
+        if (!monitoringPreferences.isMonitoringEnabled()) {
+            return;
+        }
+
+        clearLiveDashboardSnapshot();
+        monitoringLifecycle.pause(getPauseReasonForCurrentAvailability());
+        departureReminder.cancelDeparture();
+    }
+
+    private void notifyConnectionListeners(
+            WeightStationConnection.State state,
+            WeightStationConnection.Failure failure
+    ) {
+        for (WeightStationConnection.Listener listener : listeners) {
+            listener.onStateChanged(state, failure);
+        }
+    }
+
     private void notifyMonitoringListeners() {
         MonitoringLifecycle.State state = monitoringLifecycle.getState();
         MonitoringLifecycle.PauseReason reason = monitoringLifecycle.getPauseReason();
@@ -307,7 +351,7 @@ final class StationConnectionManager implements WeightStationConnection.Listener
     }
 
     @SuppressLint("MissingPermission")
-    private MonitoringLifecycle.DisconnectCause disconnectCause() {
+    private MonitoringLifecycle.DisconnectCause getDisconnectCause() {
         if (!BluetoothPermissionHelper.hasRequiredPermissions(appContext)) {
             return MonitoringLifecycle.DisconnectCause.PERMISSION_UNAVAILABLE;
         }
@@ -319,7 +363,7 @@ final class StationConnectionManager implements WeightStationConnection.Listener
     }
 
     @SuppressLint("MissingPermission")
-    private MonitoringLifecycle.PauseReason pauseReasonForAvailability() {
+    private MonitoringLifecycle.PauseReason getPauseReasonForCurrentAvailability() {
         if (!BluetoothPermissionHelper.hasRequiredPermissions(appContext)) {
             return MonitoringLifecycle.PauseReason.PERMISSION_UNAVAILABLE;
         }

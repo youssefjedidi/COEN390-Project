@@ -94,11 +94,8 @@ public class SettingsActivity extends Activity implements
         HardwareReadiness readiness = getHardwareReadiness();
         if (readiness != HardwareReadiness.READY) {
             pauseMonitoringFor(readiness);
-        } else if (connectionManager.getMonitoringState() == MonitoringLifecycle.State.PAUSED
-                && connectionManager.isMonitoringEnabled()
-                && connectionManager.getMonitoringPauseReason()
-                != MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE) {
-            StationMonitoringService.start(this);
+        } else if (shouldResumeMonitoring()) {
+            StationMonitoringService.startMonitoring(this);
         }
         renderHardwareStatus(readiness);
         renderConnectionState(
@@ -209,9 +206,9 @@ public class SettingsActivity extends Activity implements
         if (state == MonitoringLifecycle.State.STARTING
                 || state == MonitoringLifecycle.State.MONITORING
                 || state == MonitoringLifecycle.State.RECONNECTING) {
-            StationMonitoringService.stop(this);
+            StationMonitoringService.stopMonitoring(this);
         } else {
-            StationMonitoringService.start(this);
+            StationMonitoringService.startMonitoring(this);
         }
     }
 
@@ -220,14 +217,27 @@ public class SettingsActivity extends Activity implements
             return;
         }
 
-        MonitoringLifecycle.PauseReason reason =
-                MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE;
-        if (readiness == HardwareReadiness.PERMISSION_REQUIRED) {
-            reason = MonitoringLifecycle.PauseReason.PERMISSION_UNAVAILABLE;
-        } else if (readiness == HardwareReadiness.BLUETOOTH_OFF) {
-            reason = MonitoringLifecycle.PauseReason.BLUETOOTH_OFF;
+        connectionManager.pauseMonitoring(pauseReasonFor(readiness));
+    }
+
+    private boolean shouldResumeMonitoring() {
+        return connectionManager.getMonitoringState() == MonitoringLifecycle.State.PAUSED
+                && connectionManager.isMonitoringEnabled()
+                && connectionManager.getMonitoringPauseReason()
+                != MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE;
+    }
+
+    private MonitoringLifecycle.PauseReason pauseReasonFor(HardwareReadiness readiness) {
+        switch (readiness) {
+            case PERMISSION_REQUIRED:
+                return MonitoringLifecycle.PauseReason.PERMISSION_UNAVAILABLE;
+            case BLUETOOTH_OFF:
+                return MonitoringLifecycle.PauseReason.BLUETOOTH_OFF;
+            case UNSUPPORTED:
+            case READY:
+            default:
+                return MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE;
         }
-        connectionManager.pauseMonitoring(reason);
     }
 
     private void renderConnectionState(

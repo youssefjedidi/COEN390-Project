@@ -122,7 +122,6 @@ final class WeightStationConnection {
     private Failure failure;
     private boolean commandSupported;
     private volatile CommandCallback pendingCommand;
-    private DeviceCandidate pendingDevice;
     private String connectedStationAddress;
 
     WeightStationConnection(Transport transport, Listener listener) {
@@ -181,7 +180,6 @@ final class WeightStationConnection {
         transport.stopScan();
         transport.disconnect();
         commandSupported = false;
-        pendingDevice = null;
         connectedStationAddress = null;
         changeState(State.DISCONNECTED, null);
     }
@@ -226,7 +224,6 @@ final class WeightStationConnection {
         state = State.IDLE;
         failure = null;
         commandSupported = false;
-        pendingDevice = null;
         connectedStationAddress = null;
     }
 
@@ -240,7 +237,6 @@ final class WeightStationConnection {
     }
 
     private void beginGattConnection(DeviceCandidate device, ConnectionMode mode) {
-        pendingDevice = device;
         connectedStationAddress = null;
         changeState(State.CONNECTING, null);
         transport.connect(
@@ -253,7 +249,7 @@ final class WeightStationConnection {
                     @Override
                     public void onReady(boolean commandSupported) {
                         WeightStationConnection.this.commandSupported = commandSupported;
-                        connectedStationAddress = pendingDevice.address;
+                        connectedStationAddress = device.address;
                         changeState(State.CONNECTED, null);
                     }
 
@@ -270,7 +266,6 @@ final class WeightStationConnection {
                     @Override
                     public void onDisconnected() {
                         commandSupported = false;
-                        pendingDevice = null;
                         connectedStationAddress = null;
                         finishPendingCommand(CommandFailure.DISCONNECTED);
                         changeState(State.DISCONNECTED, null);
@@ -285,7 +280,9 @@ final class WeightStationConnection {
     }
 
     private boolean isConnectionInProgress() {
-        return state == State.SCANNING || state == State.CONNECTING || state == State.CONNECTED;
+        return state == State.SCANNING
+                || state == State.CONNECTING
+                || state == State.CONNECTED;
     }
 
     private void handlePayload(String payload) {
@@ -338,7 +335,6 @@ final class WeightStationConnection {
         transport.stopScan();
         transport.disconnect();
         commandSupported = false;
-        pendingDevice = null;
         connectedStationAddress = null;
         changeState(State.FAILED, failure);
     }

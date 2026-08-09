@@ -20,9 +20,9 @@ final class DepartureReminderCoordinator {
     private final Scheduler scheduler;
     private final SnapshotStore snapshotStore;
     private final ReminderSink reminderSink;
-    private DisconnectSnapshot latestSnapshot;
-    private DisconnectSnapshot pendingSnapshot;
-    private boolean armed;
+    private DisconnectSnapshot latestCompleteSnapshot;
+    private DisconnectSnapshot snapshotAwaitingReminder;
+    private boolean reminderArmed;
 
     DepartureReminderCoordinator(
             long gracePeriodMillis,
@@ -37,22 +37,22 @@ final class DepartureReminderCoordinator {
     }
 
     void onFreshSnapshot(DisconnectSnapshot snapshot) {
-        latestSnapshot = snapshot;
-        armed = true;
+        latestCompleteSnapshot = snapshot;
+        reminderArmed = true;
     }
 
     void onLinkLost() {
-        if (!armed || latestSnapshot == null) {
+        if (!reminderArmed || latestCompleteSnapshot == null) {
             return;
         }
 
-        armed = false;
-        snapshotStore.save(latestSnapshot);
-        if (latestSnapshot.getPresentItemNames().isEmpty()) {
+        reminderArmed = false;
+        snapshotStore.save(latestCompleteSnapshot);
+        if (latestCompleteSnapshot.getPresentItemNames().isEmpty()) {
             return;
         }
 
-        pendingSnapshot = latestSnapshot;
+        snapshotAwaitingReminder = latestCompleteSnapshot;
         scheduler.schedule(this::sendPendingReminder, gracePeriodMillis);
     }
 
@@ -61,13 +61,13 @@ final class DepartureReminderCoordinator {
     }
 
     void cancelDeparture() {
-        armed = false;
+        reminderArmed = false;
         clearPendingReminder();
     }
 
     private void sendPendingReminder() {
-        DisconnectSnapshot snapshot = pendingSnapshot;
-        pendingSnapshot = null;
+        DisconnectSnapshot snapshot = snapshotAwaitingReminder;
+        snapshotAwaitingReminder = null;
         if (snapshot != null) {
             reminderSink.show(snapshot);
         }
@@ -75,6 +75,6 @@ final class DepartureReminderCoordinator {
 
     private void clearPendingReminder() {
         scheduler.cancel();
-        pendingSnapshot = null;
+        snapshotAwaitingReminder = null;
     }
 }

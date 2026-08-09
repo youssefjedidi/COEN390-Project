@@ -1,16 +1,17 @@
 package com.coen390.smartexit;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+
 import org.junit.Test;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
 public class StationBackgroundMonitoringFlowTest {
     private static final String STATION_ADDRESS = "00:11:22:33:44:55";
@@ -28,9 +29,13 @@ public class StationBackgroundMonitoringFlowTest {
                 flow.transport.lastConnectionMode
         );
 
-        flow.sendCompleteCycle("1,40.0,OK", "2,0.0,NO_LOAD", "3,0.0,NO_LOAD",
-                "4,0.0,NO_LOAD");
-        assertItemPresent(flow.snapshots.restore(), "keys", 1);
+        flow.sendCompleteCycle(
+                "1,40.0,OK",
+                "2,0.0,NO_LOAD",
+                "3,0.0,NO_LOAD",
+                "4,0.0,NO_LOAD"
+        );
+        assertItemPresent(flow.snapshotStore.restore(), "keys", 1);
 
         flow.transport.dropConnection();
         assertEquals(MonitoringLifecycle.State.RECONNECTING, flow.lifecycle.getState());
@@ -42,26 +47,34 @@ public class StationBackgroundMonitoringFlowTest {
 
         flow.transport.finishConnection();
         flow.scheduler.runPendingTask();
-        assertEquals(0, flow.reminders.count);
+        assertEquals(0, flow.reminderRecorder.count);
 
-        flow.sendCompleteCycle("1,0.0,NO_LOAD", "2,0.0,NO_LOAD", "3,40.0,OK",
-                "4,0.0,NO_LOAD");
-        assertItemPresent(flow.snapshots.restore(), "keys", 3);
+        flow.sendCompleteCycle(
+                "1,0.0,NO_LOAD",
+                "2,0.0,NO_LOAD",
+                "3,40.0,OK",
+                "4,0.0,NO_LOAD"
+        );
+        assertItemPresent(flow.snapshotStore.restore(), "keys", 3);
 
         flow.transport.dropConnection();
         flow.scheduler.runPendingTask();
         flow.transport.dropConnection();
         flow.scheduler.runPendingTask();
 
-        assertEquals(1, flow.reminders.count);
-        assertItemPresent(flow.reminders.lastSnapshot, "keys", 3);
+        assertEquals(1, flow.reminderRecorder.count);
+        assertItemPresent(flow.reminderRecorder.lastSnapshot, "keys", 3);
 
         flow.transport.finishConnection();
-        flow.sendCompleteCycle("1,0.0,NO_LOAD", "2,40.0,OK", "3,0.0,NO_LOAD",
-                "4,0.0,NO_LOAD");
+        flow.sendCompleteCycle(
+                "1,0.0,NO_LOAD",
+                "2,40.0,OK",
+                "3,0.0,NO_LOAD",
+                "4,0.0,NO_LOAD"
+        );
 
         assertEquals(MonitoringLifecycle.State.MONITORING, flow.lifecycle.getState());
-        assertItemPresent(flow.snapshots.restore(), "keys", 2);
+        assertItemPresent(flow.snapshotStore.restore(), "keys", 2);
     }
 
     @Test
@@ -78,7 +91,28 @@ public class StationBackgroundMonitoringFlowTest {
 
         assertEquals(1, flow.invalidPayloadCount);
         assertFalse(flow.scheduler.hasPendingTask());
-        assertEquals(0, flow.reminders.count);
+        assertEquals(0, flow.reminderRecorder.count);
+    }
+
+    @Test
+    public void reconnectDoesNotCompleteACycleStartedBeforeTheDisconnect() {
+        ItemProfile keys = new ItemProfile("keys", "House keys", 35.0, 45.0);
+        FlowHarness flow = new FlowHarness(Collections.singletonList(keys));
+        flow.startAndConnect();
+
+        flow.sendStablePayload("1,40.0,OK");
+        flow.sendStablePayload("2,0.0,NO_LOAD");
+        flow.sendStablePayload("3,0.0,NO_LOAD");
+        flow.transport.dropConnection();
+        flow.transport.finishConnection();
+
+        flow.sendStablePayload("4,0.0,NO_LOAD");
+        assertNull(flow.snapshotStore.restore());
+
+        flow.sendStablePayload("1,40.0,OK");
+        flow.sendStablePayload("2,0.0,NO_LOAD");
+        flow.sendStablePayload("3,0.0,NO_LOAD");
+        assertItemPresent(flow.snapshotStore.restore(), "keys", 1);
     }
 
     private void assertItemPresent(
@@ -104,22 +138,22 @@ public class StationBackgroundMonitoringFlowTest {
         private final FakeTransport transport = new FakeTransport();
         private final MonitoringLifecycle lifecycle = new MonitoringLifecycle();
         private final FakeScheduler scheduler = new FakeScheduler();
-        private final PersistedSnapshots snapshots = new PersistedSnapshots();
-        private final ReminderRecorder reminders = new ReminderRecorder();
+        private final PersistedSnapshots snapshotStore = new PersistedSnapshots();
+        private final ReminderRecorder reminderRecorder = new ReminderRecorder();
         private final StationReadingProcessor processor;
-        private final DepartureReminderCoordinator departure;
+        private final DepartureReminderCoordinator reminderCoordinator;
         private final WeightStationConnection connection;
         private String knownAddress;
         private long timestampMillis = 1_000L;
         private int invalidPayloadCount;
 
-        FlowHarness(List<ItemProfile> profiles) {
+        private FlowHarness(List<ItemProfile> profiles) {
             processor = new StationReadingProcessor(profiles, 4, REQUIRED_SAMPLES, 5.0, 5.0);
-            departure = new DepartureReminderCoordinator(
+            reminderCoordinator = new DepartureReminderCoordinator(
                     10_000L,
                     scheduler,
-                    snapshots,
-                    reminders
+                    snapshotStore,
+                    reminderRecorder
             );
             connection = new WeightStationConnection(transport, this);
         }
@@ -151,14 +185,15 @@ public class StationBackgroundMonitoringFlowTest {
                 WeightStationConnection.Failure failure
         ) {
             if (state == WeightStationConnection.State.CONNECTED) {
+                processor.resetCycle();
                 knownAddress = connection.getConnectedStationAddress();
-                departure.onReconnected();
+                reminderCoordinator.onReconnected();
                 lifecycle.connected();
                 return;
             }
             if (state == WeightStationConnection.State.DISCONNECTED) {
                 if (lifecycle.disconnect(MonitoringLifecycle.DisconnectCause.LINK_LOSS)) {
-                    departure.onLinkLost();
+                    reminderCoordinator.onLinkLost();
                 }
                 if (knownAddress != null) {
                     connection.connectKnown(knownAddress);
@@ -171,8 +206,8 @@ public class StationBackgroundMonitoringFlowTest {
             Optional<DisconnectSnapshot> completed = processor.process(reading, timestampMillis++);
             if (completed.isPresent()) {
                 DisconnectSnapshot snapshot = completed.get();
-                snapshots.save(snapshot);
-                departure.onFreshSnapshot(snapshot);
+                snapshotStore.save(snapshot);
+                reminderCoordinator.onFreshSnapshot(snapshot);
             }
         }
 

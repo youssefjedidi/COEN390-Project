@@ -33,7 +33,6 @@
     <string name="open_bluetooth_settings">Open Bluetooth settings</string>
     <string name="connect_to_station">Connect to station</string>
     <string name="cancel_connection">Cancel</string>
-    <string name="disconnect_station">Disconnect</string>
     <string name="stop_monitoring">Stop monitoring</string>
     <string name="try_connection_again">Try again</string>
     <string name="tracked_items_title">Tracked items</string>
@@ -87,11 +86,7 @@
     <string name="hardware_status_off">Bluetooth is turned off</string>
     <string name="connection_section_label">Connection</string>
     <string name="connection_status_idle">Not connected</string>
-    <string name="connection_status_scanning">Scanning for station\u2026</string>
     <string name="connection_status_connecting">Connecting\u2026</string>
-    <string name="connection_status_connected">Connected to station</string>
-    <string name="connection_status_disconnected">Disconnected</string>
-    <string name="connection_status_failed">Connection failed</string>
     <string name="connection_status_permission_required">Bluetooth access is required</string>
     <string name="connection_status_bluetooth_off">Bluetooth is turned off</string>
     <string name="connection_status_unavailable">Station controls are unavailable</string>
@@ -100,9 +95,7 @@
     <string name="connection_status_paused">Monitoring paused</string>
     <string name="connection_status_stopped">Monitoring stopped</string>
     <string name="action_connect">Connect</string>
-    <string name="action_disconnect">Disconnect</string>
     <string name="action_retry">Retry</string>
-    <string name="action_cancel">Cancel</string>
     <string name="action_unavailable">Unavailable</string>
     <string name="tare_section_label">Scale calibration</string>
     <string name="action_tare">Zero all scales</string>

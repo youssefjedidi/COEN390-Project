@@ -10,6 +10,7 @@ final class StationReadingProcessor {
     private final int requiredSamples;
     private final double stabilityToleranceGrams;
     private final double emptyWeightThresholdGrams;
+    private List<ItemProfile> savedProfiles;
     private DashboardStateCoordinator dashboardCoordinator;
 
     StationReadingProcessor(
@@ -27,8 +28,13 @@ final class StationReadingProcessor {
     }
 
     synchronized void replaceProfiles(List<ItemProfile> profiles) {
+        savedProfiles = new ArrayList<>(profiles);
+        resetCycle();
+    }
+
+    synchronized void resetCycle() {
         dashboardCoordinator = new DashboardStateCoordinator(
-                new ArrayList<>(profiles),
+                savedProfiles,
                 plateCount,
                 requiredSamples,
                 stabilityToleranceGrams,

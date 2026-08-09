@@ -131,7 +131,9 @@ final class AndroidBleTransport implements WeightStationConnection.Transport {
                     appContext,
                     mode == WeightStationConnection.ConnectionMode.AUTO_RECONNECT,
                     gattCallback,
-                    BluetoothDevice.TRANSPORT_LE
+                    BluetoothDevice.TRANSPORT_LE,
+                    BluetoothDevice.PHY_LE_1M_MASK,
+                    mainHandler
             );
 
             if (bluetoothGatt == null) {

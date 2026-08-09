@@ -92,15 +92,4 @@ public class MonitoringLifecycleTest {
         );
         assertFalse(shouldScheduleReminder);
     }
-
-    @Test
-    public void resumeReturnsPausedMonitoringToStarting() {
-        lifecycle.start();
-        lifecycle.disconnect(MonitoringLifecycle.DisconnectCause.BLUETOOTH_OFF);
-
-        lifecycle.resume();
-
-        assertEquals(MonitoringLifecycle.State.STARTING, lifecycle.getState());
-        assertEquals(null, lifecycle.getPauseReason());
-    }
 }

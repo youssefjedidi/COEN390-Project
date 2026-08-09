@@ -65,6 +65,20 @@ public class StationReadingProcessorTest {
         assertTrue(processor.process(noLoad(1), 1004L).isPresent());
     }
 
+    @Test
+    public void reconnectStartsACompleteFreshCycle() {
+        assertFalse(processor.process(reading(1, 100.0f), 1000L).isPresent());
+        assertFalse(processor.process(noLoad(2), 1001L).isPresent());
+        assertFalse(processor.process(reading(3, 200.0f), 1002L).isPresent());
+
+        processor.resetCycle();
+
+        assertFalse(processor.process(noLoad(4), 1003L).isPresent());
+        assertFalse(processor.process(reading(1, 100.0f), 1004L).isPresent());
+        assertFalse(processor.process(noLoad(2), 1005L).isPresent());
+        assertTrue(processor.process(reading(3, 200.0f), 1006L).isPresent());
+    }
+
     private BluetoothReading reading(int plateNumber, float grams) {
         return BluetoothReading.forPlate(plateNumber, grams, BluetoothReading.Status.OK);
     }

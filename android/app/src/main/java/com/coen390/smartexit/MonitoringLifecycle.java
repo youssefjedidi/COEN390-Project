@@ -74,12 +74,6 @@ final class MonitoringLifecycle {
         reminderGracePending = false;
     }
 
-    void resume() {
-        if (state == State.PAUSED) {
-            start();
-        }
-    }
-
     void stop() {
         state = State.STOPPED;
         pauseReason = null;

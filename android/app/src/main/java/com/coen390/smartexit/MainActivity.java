@@ -78,7 +78,7 @@ public class MainActivity extends Activity {
                     WeightStationConnection.State state,
                     WeightStationConnection.Failure failure
             ) {
-                runOnUiThread(() -> handleConnectionState(state, failure));
+                runOnUiThread(() -> handleConnectionState(state));
             }
 
             @Override
@@ -163,9 +163,9 @@ public class MainActivity extends Activity {
         }
 
         if (connectionManager.isMonitoringEnabled()) {
-            StationMonitoringService.stop(this);
+            StationMonitoringService.stopMonitoring(this);
         } else {
-            StationMonitoringService.start(this);
+            StationMonitoringService.startMonitoring(this);
         }
     }
 
@@ -222,16 +222,20 @@ public class MainActivity extends Activity {
 
         MonitoringLifecycle.PauseReason pauseReason =
                 connectionManager.getMonitoringPauseReason();
-        if (connectionManager.getMonitoringState() == MonitoringLifecycle.State.PAUSED
-                && connectionManager.isMonitoringEnabled()
-                && pauseReason != MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE) {
-            StationMonitoringService.start(this);
+        if (shouldResumeMonitoring(pauseReason)) {
+            StationMonitoringService.startMonitoring(this);
             return;
         }
         renderMonitoringState(
                 connectionManager.getMonitoringState(),
                 connectionManager.getMonitoringPauseReason()
         );
+    }
+
+    private boolean shouldResumeMonitoring(MonitoringLifecycle.PauseReason pauseReason) {
+        return connectionManager.getMonitoringState() == MonitoringLifecycle.State.PAUSED
+                && connectionManager.isMonitoringEnabled()
+                && pauseReason != MonitoringLifecycle.PauseReason.CONNECTION_UNAVAILABLE;
     }
 
     private BluetoothAdapter getBluetoothAdapter() {
@@ -275,44 +279,54 @@ public class MainActivity extends Activity {
             MonitoringLifecycle.State state,
             MonitoringLifecycle.PauseReason pauseReason
     ) {
-        if (state == MonitoringLifecycle.State.MONITORING) {
-            renderConnectionState(WeightStationConnection.State.CONNECTED, null);
-            return;
+        switch (state) {
+            case MONITORING:
+                renderConnectionState(WeightStationConnection.State.CONNECTED, null);
+                break;
+            case RECONNECTING:
+                showPendingConnectionState(
+                        R.string.station_reconnecting,
+                        R.string.reading_detail_station_reconnecting
+                );
+                bluetoothActionButton.setText(R.string.stop_monitoring);
+                break;
+            case STARTING:
+                renderConnectionState(
+                        connectionManager.getState(),
+                        connectionManager.getFailure()
+                );
+                bluetoothActionButton.setText(R.string.stop_monitoring);
+                break;
+            case PAUSED:
+                showConnectionState(
+                        R.string.station_monitoring_paused,
+                        monitoringPauseDetail(pauseReason),
+                        R.string.stop_monitoring,
+                        R.drawable.status_waiting_background,
+                        R.color.status_waiting_text
+                );
+                break;
+            case STOPPED:
+            default:
+                showBluetoothReadyState();
+                break;
         }
-        if (state == MonitoringLifecycle.State.RECONNECTING) {
-            showPendingConnectionState(
-                    R.string.station_reconnecting,
-                    R.string.reading_detail_station_reconnecting
-            );
-            bluetoothActionButton.setText(R.string.stop_monitoring);
-            return;
-        }
-        if (state == MonitoringLifecycle.State.STARTING) {
-            renderConnectionState(connectionManager.getState(), connectionManager.getFailure());
-            bluetoothActionButton.setText(R.string.stop_monitoring);
-            return;
-        }
-        if (state == MonitoringLifecycle.State.PAUSED) {
-            showConnectionState(
-                    R.string.station_monitoring_paused,
-                    monitoringPauseDetail(pauseReason),
-                    R.string.stop_monitoring,
-                    R.drawable.status_waiting_background,
-                    R.color.status_waiting_text
-            );
-            return;
-        }
-        showBluetoothReadyState();
     }
 
     private int monitoringPauseDetail(MonitoringLifecycle.PauseReason reason) {
-        if (reason == MonitoringLifecycle.PauseReason.BLUETOOTH_OFF) {
-            return R.string.monitoring_paused_bluetooth;
+        if (reason == null) {
+            return R.string.monitoring_paused_unavailable;
         }
-        if (reason == MonitoringLifecycle.PauseReason.PERMISSION_UNAVAILABLE) {
-            return R.string.monitoring_paused_permission;
+
+        switch (reason) {
+            case BLUETOOTH_OFF:
+                return R.string.monitoring_paused_bluetooth;
+            case PERMISSION_UNAVAILABLE:
+                return R.string.monitoring_paused_permission;
+            case CONNECTION_UNAVAILABLE:
+            default:
+                return R.string.monitoring_paused_unavailable;
         }
-        return R.string.monitoring_paused_unavailable;
     }
 
     private void renderConnectionState(
@@ -462,9 +476,7 @@ public class MainActivity extends Activity {
     private void showSavedItems() {
         List<ItemProfile> savedProfiles = itemProfileRepository.getAll();
         int visibleCount = Math.min(savedProfiles.size(), MAX_DASHBOARD_ITEMS);
-        List<ItemProfile> nextVisibleProfiles =
-                new ArrayList<>(savedProfiles.subList(0, visibleCount));
-        visibleProfiles = nextVisibleProfiles;
+        visibleProfiles = new ArrayList<>(savedProfiles.subList(0, visibleCount));
 
         addItemButton.setVisibility(
                 visibleCount == MAX_DASHBOARD_ITEMS ? View.GONE : View.VISIBLE
@@ -687,10 +699,7 @@ public class MainActivity extends Activity {
         connectionManager.leaveAmbiguousMatchUnresolved(plateNumber);
     }
 
-    private void handleConnectionState(
-            WeightStationConnection.State state,
-            WeightStationConnection.Failure failure
-    ) {
+    private void handleConnectionState(WeightStationConnection.State state) {
         renderMonitoringState(
                 connectionManager.getMonitoringState(),
                 connectionManager.getMonitoringPauseReason()
