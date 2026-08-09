@@ -5,10 +5,18 @@ import android.bluetooth.BluetoothManager;
 import android.content.Context;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 final class StationConnectionManager implements WeightStationConnection.Listener {
+
+    interface DashboardListener {
+        void onDashboardUpdated(DisconnectSnapshot snapshot);
+    }
+
+    private static final int PLATE_COUNT = 4;
+    private static final int REQUIRED_STABLE_SAMPLES = 3;
+    private static final double STABILITY_TOLERANCE_GRAMS = 5.0;
+    private static final double EMPTY_WEIGHT_THRESHOLD_GRAMS = 5.0;
 
     private static StationConnectionManager instance;
 
@@ -22,17 +30,23 @@ final class StationConnectionManager implements WeightStationConnection.Listener
     private final Context appContext;
     private final List<WeightStationConnection.Listener> listeners =
             new CopyOnWriteArrayList<>();
-    private final DisconnectEventCoordinator disconnectEventCoordinator =
-            new DisconnectEventCoordinator();
+    private final List<DashboardListener> dashboardListeners =
+            new CopyOnWriteArrayList<>();
     private final DisconnectSnapshotRepository disconnectSnapshotRepository;
-    private final DisconnectNotifier disconnectNotifier;
+    private final StationReadingProcessor readingProcessor;
     private WeightStationConnection connection;
     private DisconnectSnapshot latestDashboardSnapshot;
 
     private StationConnectionManager(Context appContext) {
         this.appContext = appContext;
         disconnectSnapshotRepository = new DisconnectSnapshotRepository(appContext);
-        disconnectNotifier = new DisconnectNotifier(appContext);
+        readingProcessor = new StationReadingProcessor(
+                new ItemProfileRepository(appContext).getAll(),
+                PLATE_COUNT,
+                REQUIRED_STABLE_SAMPLES,
+                STABILITY_TOLERANCE_GRAMS,
+                EMPTY_WEIGHT_THRESHOLD_GRAMS
+        );
     }
 
     /**
@@ -88,17 +102,13 @@ final class StationConnectionManager implements WeightStationConnection.Listener
     /** Fully tears down the connection, e.g. when permissions/BLE support are lost. */
     void reset() {
         if (connection != null) {
-            saveDisconnectSnapshot(WeightStationConnection.State.DISCONNECTED);
             connection.close();
             connection = null;
         }
     }
 
-    synchronized void recordDashboardStates(
-            List<TrackedItemState> states,
-            long timestampMillis
-    ) {
-        latestDashboardSnapshot = DisconnectSnapshot.from(timestampMillis, states);
+    void refreshProfiles(List<ItemProfile> profiles) {
+        readingProcessor.replaceProfiles(profiles);
     }
 
     synchronized DisconnectSnapshot getLatestDashboardSnapshot() {
@@ -113,6 +123,37 @@ final class StationConnectionManager implements WeightStationConnection.Listener
         listeners.remove(listener);
     }
 
+    void addDashboardListener(DashboardListener listener) {
+        dashboardListeners.add(listener);
+    }
+
+    void removeDashboardListener(DashboardListener listener) {
+        dashboardListeners.remove(listener);
+    }
+
+    List<RecognitionResult> getPendingAmbiguousResults() {
+        return readingProcessor.getPendingAmbiguousResults();
+    }
+
+    void confirmAmbiguousMatch(int plateNumber, String itemId) {
+        publishDashboardSnapshot(
+                readingProcessor.confirmAmbiguousMatch(
+                        plateNumber,
+                        itemId,
+                        System.currentTimeMillis()
+                )
+        );
+    }
+
+    void leaveAmbiguousMatchUnresolved(int plateNumber) {
+        publishDashboardSnapshot(
+                readingProcessor.leaveAmbiguousMatchUnresolved(
+                        plateNumber,
+                        System.currentTimeMillis()
+                )
+        );
+    }
+
     private BluetoothAdapter getBluetoothAdapter() {
         BluetoothManager bluetoothManager =
                 (BluetoothManager) appContext.getSystemService(Context.BLUETOOTH_SERVICE);
@@ -121,7 +162,6 @@ final class StationConnectionManager implements WeightStationConnection.Listener
 
     @Override
     public void onStateChanged(WeightStationConnection.State state, WeightStationConnection.Failure failure) {
-        saveDisconnectSnapshot(state);
         for (WeightStationConnection.Listener listener : listeners) {
             listener.onStateChanged(state, failure);
         }
@@ -129,6 +169,9 @@ final class StationConnectionManager implements WeightStationConnection.Listener
 
     @Override
     public void onReadingReceived(BluetoothReading reading) {
+        readingProcessor
+                .process(reading, System.currentTimeMillis())
+                .ifPresent(this::publishDashboardSnapshot);
         for (WeightStationConnection.Listener listener : listeners) {
             listener.onReadingReceived(reading);
         }
@@ -141,21 +184,13 @@ final class StationConnectionManager implements WeightStationConnection.Listener
         }
     }
 
-    private void saveDisconnectSnapshot(WeightStationConnection.State state) {
-        Optional<DisconnectSnapshot> snapshot;
+    private void publishDashboardSnapshot(DisconnectSnapshot snapshot) {
         synchronized (this) {
-            snapshot = disconnectEventCoordinator.onStateChanged(
-                    state,
-                    latestDashboardSnapshot
-            );
-            if (snapshot.isPresent()) {
-                latestDashboardSnapshot = null;
-            }
+            latestDashboardSnapshot = snapshot;
         }
-
-        if (snapshot.isPresent()) {
-            disconnectSnapshotRepository.save(snapshot.get());
-            disconnectNotifier.show(snapshot.get());
+        disconnectSnapshotRepository.save(snapshot);
+        for (DashboardListener listener : dashboardListeners) {
+            listener.onDashboardUpdated(snapshot);
         }
     }
 }

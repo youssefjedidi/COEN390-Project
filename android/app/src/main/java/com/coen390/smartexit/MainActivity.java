@@ -24,9 +24,6 @@ public class MainActivity extends Activity {
 
     private static final int BLUETOOTH_PERMISSION_REQUEST = 1001;
     private static final int MAX_DASHBOARD_ITEMS = 4;
-    private static final int REQUIRED_STABLE_SAMPLES = 3;
-    private static final double STABILITY_TOLERANCE_GRAMS = 5.0;
-    private static final double EMPTY_WEIGHT_THRESHOLD_GRAMS = 5.0;
 
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("h:mm a", Locale.getDefault());
 
@@ -43,13 +40,13 @@ public class MainActivity extends Activity {
     private TextView[] itemNames;
     private TextView[] itemStatuses;
     private TextView[] itemDetails;
-    private DashboardStateCoordinator dashboardStateCoordinator;
     private boolean ambiguousDialogVisible;
     private ItemProfileRepository itemProfileRepository;
     private DisconnectSnapshotRepository disconnectSnapshotRepository;
     private List<ItemProfile> visibleProfiles = new ArrayList<>();
     private StationConnectionManager connectionManager;
     private WeightStationConnection.Listener connectionListener;
+    private StationConnectionManager.DashboardListener dashboardListener;
     private boolean showDisconnectSnapshot;
 
     static Intent newIntentForDisconnectSnapshot(Context context) {
@@ -85,7 +82,7 @@ public class MainActivity extends Activity {
 
             @Override
             public void onReadingReceived(BluetoothReading reading) {
-                showBluetoothReading(reading);
+                // The shared manager processes readings even when this screen is not visible.
             }
 
             @Override
@@ -94,6 +91,8 @@ public class MainActivity extends Activity {
             }
         };
         connectionManager.addListener(connectionListener);
+        dashboardListener = snapshot -> runOnUiThread(() -> handleDashboardUpdate(snapshot));
+        connectionManager.addDashboardListener(dashboardListener);
 
         addItemButton = findViewById(R.id.addItemButton);
         addItemButton.setOnClickListener(
@@ -124,6 +123,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         connectionManager.removeListener(connectionListener);
+        connectionManager.removeDashboardListener(dashboardListener);
         super.onDestroy();
     }
 
@@ -425,13 +425,7 @@ public class MainActivity extends Activity {
                 visibleCount == MAX_DASHBOARD_ITEMS ? View.GONE : View.VISIBLE
         );
 
-        dashboardStateCoordinator = new DashboardStateCoordinator(
-                visibleProfiles,
-                MAX_DASHBOARD_ITEMS,
-                REQUIRED_STABLE_SAMPLES,
-                STABILITY_TOLERANCE_GRAMS,
-                EMPTY_WEIGHT_THRESHOLD_GRAMS
-        );
+        connectionManager.refreshProfiles(visibleProfiles);
 
         DisconnectSnapshot liveSnapshot = connectionManager.getLatestDashboardSnapshot();
         DisconnectSnapshot cachedSnapshot = disconnectSnapshotRepository.load();
@@ -455,7 +449,11 @@ public class MainActivity extends Activity {
     }
 
     private void showWaitingDashboard() {
-        renderDashboard(dashboardStateCoordinator.getStates(), false);
+        List<TrackedItemState> waitingStates = new ArrayList<>();
+        for (ItemProfile profile : visibleProfiles) {
+            waitingStates.add(TrackedItemState.unknown(profile));
+        }
+        renderDashboard(waitingStates, false);
         dashboardDataStatus.setText(R.string.dashboard_data_waiting);
     }
 
@@ -587,43 +585,18 @@ public class MainActivity extends Activity {
         statusView.setTextColor(getColor(textColor));
     }
 
-    private void showBluetoothReading(BluetoothReading reading) {
-        runOnUiThread(() -> updateDashboardFromReading(reading));
-    }
-
-    private void updateDashboardFromReading(BluetoothReading reading) {
-        if (!reading.hasPlateNumber()
-                || dashboardStateCoordinator == null
-                || ambiguousDialogVisible) {
-            return;
-        }
-        if (reading.getStatus() == BluetoothReading.Status.ERROR
-                || reading.getStatus() == BluetoothReading.Status.UNSTABLE) {
-            return;
-        }
-
-        double weightGrams = reading.getStatus() == BluetoothReading.Status.NO_LOAD
-                ? 0.0
-                : reading.getWeightGrams();
-        dashboardStateCoordinator
-                .processReading(
-                        new PlateReading(reading.getPlateNumber(), weightGrams)
-                )
-                .ifPresent(this::handleDashboardUpdate);
-    }
-
-    private void handleDashboardUpdate(List<TrackedItemState> states) {
+    private void handleDashboardUpdate(DisconnectSnapshot snapshot) {
         showDisconnectSnapshot = false;
-        long timestampMillis = System.currentTimeMillis();
-        connectionManager.recordDashboardStates(states, timestampMillis);
-        renderDashboard(states, false);
-        showLiveDashboardTime(timestampMillis);
-        showNextAmbiguousMatch();
+        renderDashboard(snapshot.restore(visibleProfiles), false);
+        showLiveDashboardTime(snapshot.getTimestampMillis());
+        if (!ambiguousDialogVisible) {
+            showNextAmbiguousMatch();
+        }
     }
 
     private void showNextAmbiguousMatch() {
         List<RecognitionResult> pendingResults =
-                dashboardStateCoordinator.getPendingAmbiguousResults();
+                connectionManager.getPendingAmbiguousResults();
         if (pendingResults.isEmpty()) {
             ambiguousDialogVisible = false;
             return;
@@ -660,27 +633,13 @@ public class MainActivity extends Activity {
     }
 
     private void confirmAmbiguousMatch(int plateNumber, ItemProfile selectedItem) {
-        List<TrackedItemState> states =
-                dashboardStateCoordinator.confirmAmbiguousMatch(
-                        plateNumber,
-                        selectedItem.getId()
-                );
-        finishAmbiguousChoice(states);
+        ambiguousDialogVisible = false;
+        connectionManager.confirmAmbiguousMatch(plateNumber, selectedItem.getId());
     }
 
     private void leaveAmbiguousMatchUnresolved(int plateNumber) {
-        List<TrackedItemState> states =
-                dashboardStateCoordinator.leaveAmbiguousMatchUnresolved(plateNumber);
-        finishAmbiguousChoice(states);
-    }
-
-    private void finishAmbiguousChoice(List<TrackedItemState> states) {
         ambiguousDialogVisible = false;
-        long timestampMillis = System.currentTimeMillis();
-        connectionManager.recordDashboardStates(states, timestampMillis);
-        renderDashboard(states, false);
-        showLiveDashboardTime(timestampMillis);
-        showNextAmbiguousMatch();
+        connectionManager.leaveAmbiguousMatchUnresolved(plateNumber);
     }
 
     private void handleConnectionState(

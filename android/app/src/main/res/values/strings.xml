@@ -132,4 +132,10 @@
     <string name="ambiguous_match_not_sure">Not sure</string>
     <string name="calibration_place_item">Remove all other items from the station. Leave only the item you want to save on one tray.</string>
     <string name="calibration_multiple_plates_changed">More than one tray has an item on it. Remove the other items and leave only this one. If the other trays are already empty, use Zero all scales in Settings.</string>
+    <string name="monitoring_notification_channel">Station monitoring</string>
+    <string name="monitoring_notification_channel_detail">Keeps the phone connected to the Smart Exit station.</string>
+    <string name="monitoring_notification_title">Smart Exit is monitoring your station</string>
+    <string name="monitoring_starting">Starting station monitoring…</string>
+    <string name="monitoring_connected">Your tracked items are being monitored.</string>
+    <string name="monitoring_reconnecting">Waiting for the station to reconnect…</string>
 </resources>
