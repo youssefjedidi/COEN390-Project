@@ -15,7 +15,7 @@ import java.util.List;
 final class DisconnectNotifier {
 
     private static final String CHANNEL_ID = "forgotten_items";
-    private static final int NOTIFICATION_ID = 2001;
+    static final int FORGOTTEN_ITEMS_NOTIFICATION_ID = 2002;
 
     private final Context appContext;
     private final NotificationManager notificationManager;
@@ -57,7 +57,7 @@ final class DisconnectNotifier {
                 .setAutoCancel(true)
                 .setCategory(Notification.CATEGORY_REMINDER)
                 .build();
-        notificationManager.notify(NOTIFICATION_ID, notification);
+        notificationManager.notify(FORGOTTEN_ITEMS_NOTIFICATION_ID, notification);
     }
 
     static boolean shouldNotify(boolean permissionGranted, List<String> itemNames) {
