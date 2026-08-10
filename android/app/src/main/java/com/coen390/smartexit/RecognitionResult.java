@@ -67,6 +67,14 @@ public final class RecognitionResult {
         );
     }
 
+    public static RecognitionResult unavailable(PlateReading reading) {
+        return new RecognitionResult(
+                RecognitionStatus.UNAVAILABLE,
+                requireReading(reading),
+                Collections.emptyList()
+        );
+    }
+
     public static RecognitionResult empty(PlateReading reading) {
         return new RecognitionResult(
                 RecognitionStatus.EMPTY,

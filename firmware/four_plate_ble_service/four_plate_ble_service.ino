@@ -6,25 +6,31 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <HX711.h>
+#include <Preferences.h>
 #include <Wire.h>
 
 constexpr int PLATE_COUNT = 4;
-constexpr int SAMPLE_COUNT = 5;
+constexpr int SAMPLE_COUNT = 9;
+constexpr int TRIMMED_SAMPLE_COUNT = 5;
 
-const int DOUT_PINS[PLATE_COUNT] = {34, 18, 35, 19};
+const int DOUT_PINS[PLATE_COUNT] = {35, 18, 34, 19};
 const int SCK_PINS[PLATE_COUNT] = {32, 17, 33, 23};
 const float CALIBRATION_FACTORS[PLATE_COUNT] = {
-    2170.77f,
-    923.52f,
-    2563.81f,
-    1840.87f
+    921.91f,
+    -1025.04f,
+    2545.05f,
+    2154.01f
 };
 
-constexpr float CLEAR_THRESHOLD_GRAMS = 5.0f;
+constexpr float CLEAR_THRESHOLD_GRAMS = 20.0f;
 constexpr float STABILITY_THRESHOLD_GRAMS = 5.0f;
+constexpr float STABILITY_THRESHOLD_PERCENT = 0.04f;
 constexpr float MAX_WEIGHT_GRAMS = 1000.0f;
-constexpr unsigned long PUBLISH_INTERVAL_MS = 500;
+constexpr float MIN_CALIBRATION_MASS_GRAMS = 20.0f;
+constexpr float MIN_CALIBRATION_FACTOR = 10.0f;
 constexpr size_t PAYLOAD_SIZE = 24;
+constexpr size_t SERIAL_COMMAND_SIZE = 32;
+constexpr char PREFERENCES_NAMESPACE[] = "plate_scales";
 
 constexpr int SCREEN_WIDTH = 128;
 constexpr int SCREEN_HEIGHT = 64;
@@ -42,6 +48,8 @@ constexpr char COMMAND_CHARACTERISTIC_UUID[] =
 
 HX711 scales[PLATE_COUNT];
 bool scaleAvailable[PLATE_COUNT] = {};
+Preferences preferences;
+bool preferencesAvailable = false;
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET_PIN);
 bool displayAvailable = false;
 
@@ -50,6 +58,9 @@ BLECharacteristic *weightCharacteristic = nullptr;
 BLECharacteristic *commandCharacteristic = nullptr;
 volatile bool deviceConnected = false;
 volatile bool tareRequested = false;
+volatile bool calibrationRequested = false;
+int requestedCalibrationPlate = 0;
+float requestedCalibrationMass = 0.0f;
 bool previousConnectionState = false;
 
 enum class WeightStatus {
@@ -57,6 +68,12 @@ enum class WeightStatus {
   NoLoad,
   Unstable,
   Error
+};
+
+enum class TareResult {
+  AllScales,
+  AvailableScales,
+  Failed
 };
 
 struct PlateReading {
@@ -79,16 +96,54 @@ class StationServerCallbacks : public BLEServerCallbacks {
 class StationCommandCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *characteristic) override {
     auto command = characteristic->getValue();
-    if (command != "TARE") {
-      characteristic->setValue("UNKNOWN_COMMAND");
-      Serial.print("Ignored BLE command: ");
-      Serial.println(command.c_str());
+
+    if (command == "TARE") {
+      if (tareRequested || calibrationRequested) {
+        characteristic->setValue("TARE_FAILED");
+        characteristic->notify();
+        return;
+      }
+
+      tareRequested = true;
+      characteristic->setValue("TARE_QUEUED");
+      Serial.println("BLE tare request queued.");
       return;
     }
 
-    tareRequested = true;
-    characteristic->setValue("TARE_QUEUED");
-    Serial.println("BLE tare request queued.");
+    int plateNumber = 0;
+    float referenceMass = 0.0f;
+    char trailingCharacter = '\0';
+    bool validCalibrationCommand =
+        sscanf(
+            command.c_str(),
+            "CALIBRATE,%d,%f%c",
+            &plateNumber,
+            &referenceMass,
+            &trailingCharacter) == 2;
+    if (validCalibrationCommand) {
+      if (tareRequested || calibrationRequested) {
+        char response[PAYLOAD_SIZE];
+        snprintf(
+            response,
+            sizeof(response),
+            "CALIBRATION_FAILED,%d",
+            plateNumber);
+        characteristic->setValue(response);
+        characteristic->notify();
+        return;
+      }
+
+      requestedCalibrationPlate = plateNumber;
+      requestedCalibrationMass = referenceMass;
+      calibrationRequested = true;
+      Serial.print("BLE calibration request queued for Plate ");
+      Serial.println(plateNumber);
+      return;
+    }
+
+    characteristic->setValue("UNKNOWN_COMMAND");
+    Serial.print("Ignored BLE command: ");
+    Serial.println(command.c_str());
   }
 };
 
@@ -158,17 +213,16 @@ void updateDisplay(const PlateReading readings[PLATE_COUNT]) {
 
     switch (readings[index].status) {
       case WeightStatus::Ok:
-        display.print(readings[index].grams, 0);
-        display.print(" g");
+        display.print("ITEM");
         break;
       case WeightStatus::NoLoad:
         display.print("EMPTY");
         break;
       case WeightStatus::Unstable:
-        display.print("UNSTABLE");
+        display.print("MOVING");
         break;
       case WeightStatus::Error:
-        display.print("ERROR");
+        display.print("SENSOR ERROR");
         break;
     }
   }
@@ -221,27 +275,43 @@ bool tareScale(int index, int sampleCount = 20) {
   return true;
 }
 
-bool tareAllScales() {
+TareResult tareAllScales() {
   Serial.println("Taring all available plates...");
-  bool allSucceeded = true;
+  int taredScaleCount = 0;
 
   for (int index = 0; index < PLATE_COUNT; index++) {
     bool tareSucceeded = tareScale(index);
     scaleAvailable[index] = tareSucceeded;
-    allSucceeded = allSucceeded && tareSucceeded;
+    if (tareSucceeded) {
+      taredScaleCount++;
+    }
 
     Serial.print("Plate ");
     Serial.print(index + 1);
     Serial.println(tareSucceeded ? " tare complete." : " tare failed.");
   }
 
-  return allSucceeded;
+  if (taredScaleCount == PLATE_COUNT) {
+    return TareResult::AllScales;
+  }
+  if (taredScaleCount > 0) {
+    return TareResult::AvailableScales;
+  }
+  return TareResult::Failed;
 }
 
 void startScales() {
   for (int index = 0; index < PLATE_COUNT; index++) {
     scales[index].begin(DOUT_PINS[index], SCK_PINS[index]);
-    scales[index].set_scale(CALIBRATION_FACTORS[index]);
+
+    char calibrationKey[12];
+    snprintf(calibrationKey, sizeof(calibrationKey), "factor_%d", index + 1);
+    float calibrationFactor = preferencesAvailable
+                                  ? preferences.getFloat(
+                                        calibrationKey,
+                                        CALIBRATION_FACTORS[index])
+                                  : CALIBRATION_FACTORS[index];
+    scales[index].set_scale(calibrationFactor);
     scaleAvailable[index] = scales[index].wait_ready_timeout(3000);
 
     Serial.print("Plate ");
@@ -256,15 +326,63 @@ void startScales() {
   tareAllScales();
 }
 
+void sortSamples(float samples[SAMPLE_COUNT]) {
+  for (int index = 1; index < SAMPLE_COUNT; index++) {
+    float value = samples[index];
+    int position = index - 1;
+
+    while (position >= 0 && samples[position] > value) {
+      samples[position + 1] = samples[position];
+      position--;
+    }
+    samples[position + 1] = value;
+  }
+}
+
+PlateReading summarizeSamples(float samples[SAMPLE_COUNT]) {
+  // Keep the middle five samples so one or two electrical spikes cannot
+  // invalidate an otherwise steady plate reading.
+  sortSamples(samples);
+
+  constexpr int FIRST_KEPT_SAMPLE =
+      (SAMPLE_COUNT - TRIMMED_SAMPLE_COUNT) / 2;
+  constexpr int LAST_KEPT_SAMPLE =
+      FIRST_KEPT_SAMPLE + TRIMMED_SAMPLE_COUNT - 1;
+
+  float total = 0.0f;
+  for (int index = FIRST_KEPT_SAMPLE; index <= LAST_KEPT_SAMPLE; index++) {
+    total += samples[index];
+  }
+
+  float average = total / TRIMMED_SAMPLE_COUNT;
+  float centralSpread =
+      samples[LAST_KEPT_SAMPLE] - samples[FIRST_KEPT_SAMPLE];
+  float allowedSpread = max(
+      STABILITY_THRESHOLD_GRAMS,
+      fabsf(average) * STABILITY_THRESHOLD_PERCENT);
+
+  if (average < -CLEAR_THRESHOLD_GRAMS || average > MAX_WEIGHT_GRAMS) {
+    return {0.0f, WeightStatus::Error};
+  }
+  if (centralSpread > allowedSpread) {
+    return {max(0.0f, average), WeightStatus::Unstable};
+  }
+  if (fabsf(average) <= CLEAR_THRESHOLD_GRAMS) {
+    return {0.0f, WeightStatus::NoLoad};
+  }
+  return {average, WeightStatus::Ok};
+}
+
 void collectPlateReadings(PlateReading readings[PLATE_COUNT]) {
-  float totals[PLATE_COUNT] = {};
-  float minimums[PLATE_COUNT];
-  float maximums[PLATE_COUNT];
+  float samples[PLATE_COUNT][SAMPLE_COUNT] = {};
   bool cycleValid[PLATE_COUNT];
 
   for (int index = 0; index < PLATE_COUNT; index++) {
-    minimums[index] = MAX_WEIGHT_GRAMS;
-    maximums[index] = -MAX_WEIGHT_GRAMS;
+    // A plate can miss the startup check while its HX711 is still settling.
+    // Retry unavailable plates so a temporary startup delay is not permanent.
+    if (!scaleAvailable[index]) {
+      scaleAvailable[index] = scales[index].wait_ready_timeout(50);
+    }
     cycleValid[index] = scaleAvailable[index];
   }
 
@@ -286,9 +404,7 @@ void collectPlateReadings(PlateReading readings[PLATE_COUNT]) {
         continue;
       }
 
-      totals[index] += weight;
-      minimums[index] = min(minimums[index], weight);
-      maximums[index] = max(maximums[index], weight);
+      samples[index][sample] = weight;
     }
   }
 
@@ -298,17 +414,7 @@ void collectPlateReadings(PlateReading readings[PLATE_COUNT]) {
       continue;
     }
 
-    float average = totals[index] / SAMPLE_COUNT;
-    if (average < -CLEAR_THRESHOLD_GRAMS || average > MAX_WEIGHT_GRAMS) {
-      readings[index] = {0.0f, WeightStatus::Error};
-    } else if (maximums[index] - minimums[index] >
-               STABILITY_THRESHOLD_GRAMS) {
-      readings[index] = {max(0.0f, average), WeightStatus::Unstable};
-    } else if (fabsf(average) <= CLEAR_THRESHOLD_GRAMS) {
-      readings[index] = {0.0f, WeightStatus::NoLoad};
-    } else {
-      readings[index] = {average, WeightStatus::Ok};
-    }
+    readings[index] = summarizeSamples(samples[index]);
   }
 }
 
@@ -342,14 +448,83 @@ void publishAllPlates() {
   }
 }
 
-void handleSerialCommand() {
-  if (Serial.available() == 0) {
+bool calibratePlate(int plateNumber, float referenceMass) {
+  int index = plateNumber - 1;
+  if (index < 0 || index >= PLATE_COUNT) {
+    Serial.println("Calibration failed: plate must be between 1 and 4.");
+    return false;
+  }
+  if (!isfinite(referenceMass) ||
+      referenceMass < MIN_CALIBRATION_MASS_GRAMS ||
+      referenceMass > MAX_WEIGHT_GRAMS) {
+    Serial.println("Calibration failed: use a reference mass from 20 to 1000 g.");
+    return false;
+  }
+  if (!scales[index].wait_ready_timeout(1000)) {
+    Serial.println("Calibration failed: this plate is not responding.");
+    return false;
+  }
+  scaleAvailable[index] = true;
+
+  long referenceReading = scales[index].get_value(25);
+  float calibrationFactor = referenceReading / referenceMass;
+  if (fabsf(calibrationFactor) < MIN_CALIBRATION_FACTOR) {
+    Serial.println(
+        "Calibration failed: no meaningful weight change was detected.");
+    return false;
+  }
+
+  scales[index].set_scale(calibrationFactor);
+
+  char calibrationKey[12];
+  snprintf(calibrationKey, sizeof(calibrationKey), "factor_%d", plateNumber);
+  bool saved = preferencesAvailable &&
+               preferences.putFloat(calibrationKey, calibrationFactor) ==
+                   sizeof(float);
+
+  Serial.print("Plate ");
+  Serial.print(plateNumber);
+  Serial.print(saved ? " calibration saved. Factor: "
+                     : " calibration applied until restart. Factor: ");
+  Serial.println(calibrationFactor, 4);
+  return true;
+}
+
+void processSerialCommand(const char *command) {
+  if (strcasecmp(command, "t") == 0) {
+    tareAllScales();
     return;
   }
 
-  char command = Serial.read();
-  if (command == 't' || command == 'T') {
-    tareAllScales();
+  int plateNumber = 0;
+  float referenceMass = 0.0f;
+  if (sscanf(command, "c%d %f", &plateNumber, &referenceMass) == 2 ||
+      sscanf(command, "C%d %f", &plateNumber, &referenceMass) == 2) {
+    calibratePlate(plateNumber, referenceMass);
+    return;
+  }
+
+  Serial.println("Unknown command. Use 't' or 'c<plate> <grams>'.");
+}
+
+void handleSerialCommand() {
+  static char command[SERIAL_COMMAND_SIZE];
+  static size_t commandLength = 0;
+
+  while (Serial.available() > 0) {
+    char character = Serial.read();
+    if (character == '\r' || character == '\n') {
+      if (commandLength > 0) {
+        command[commandLength] = '\0';
+        processSerialCommand(command);
+        commandLength = 0;
+      }
+      continue;
+    }
+
+    if (commandLength < sizeof(command) - 1) {
+      command[commandLength++] = character;
+    }
   }
 }
 
@@ -362,13 +537,44 @@ void handleTareRequest() {
   commandCharacteristic->setValue("TARE_RUNNING");
   showDisplayMessage("Taring plates...");
 
-  bool tareSucceeded = tareAllScales();
-  commandCharacteristic->setValue(tareSucceeded ? "TARE_OK" : "TARE_FAILED");
+  TareResult result = tareAllScales();
+  const char *response = "TARE_FAILED";
+  if (result == TareResult::AllScales) {
+    response = "TARE_OK";
+  } else if (result == TareResult::AvailableScales) {
+    response = "TARE_PARTIAL";
+  }
+
+  commandCharacteristic->setValue(response);
   if (deviceConnected) {
     commandCharacteristic->notify();
   }
-  Serial.println(tareSucceeded ? "BLE tare request complete."
-                               : "BLE tare request failed.");
+  Serial.print("BLE tare result: ");
+  Serial.println(response);
+}
+
+void handleCalibrationRequest() {
+  if (!calibrationRequested) {
+    return;
+  }
+
+  int plateNumber = requestedCalibrationPlate;
+  float referenceMass = requestedCalibrationMass;
+  calibrationRequested = false;
+
+  showDisplayMessage("Calibrating plate...");
+  bool calibrationSucceeded = calibratePlate(plateNumber, referenceMass);
+
+  char response[PAYLOAD_SIZE];
+  snprintf(
+      response,
+      sizeof(response),
+      calibrationSucceeded ? "CALIBRATION_OK,%d" : "CALIBRATION_FAILED,%d",
+      plateNumber);
+  commandCharacteristic->setValue(response);
+  if (deviceConnected) {
+    commandCharacteristic->notify();
+  }
 }
 
 void restartAdvertisingAfterDisconnect() {
@@ -389,6 +595,14 @@ void setup() {
   Serial.println();
   Serial.println("Smart Exit four-plate BLE service");
   Serial.println("Send 't' with every plate empty to tare all scales.");
+  Serial.println(
+      "To calibrate, place a known mass on one plate and send, for example, "
+      "'c1 453.6'.");
+
+  preferencesAvailable = preferences.begin(PREFERENCES_NAMESPACE, false);
+  if (!preferencesAvailable) {
+    Serial.println("Calibration storage unavailable; using firmware factors.");
+  }
 
   startDisplay();
   startScales();
@@ -398,13 +612,7 @@ void setup() {
 void loop() {
   handleSerialCommand();
   handleTareRequest();
+  handleCalibrationRequest();
   restartAdvertisingAfterDisconnect();
-
-  static unsigned long lastPublish = 0;
-  if (millis() - lastPublish < PUBLISH_INTERVAL_MS) {
-    return;
-  }
-  lastPublish = millis();
-
   publishAllPlates();
 }

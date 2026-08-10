@@ -7,8 +7,10 @@ import android.bluetooth.BluetoothManager;
 import android.content.Intent;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.text.InputType;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
@@ -16,6 +18,8 @@ public class SettingsActivity extends Activity implements
         WeightStationConnection.Listener,
         StationConnectionManager.MonitoringListener {
     private static final int BLUETOOTH_PERMISSION_REQUEST = 1002;
+    private static final int PLATE_COUNT = 4;
+    private static final double DEFAULT_REFERENCE_MASS_GRAMS = 453.6;
 
     private enum HardwareReadiness {
         READY,
@@ -29,12 +33,16 @@ public class SettingsActivity extends Activity implements
     private TextView connectionStatus;
     private TextView connectionFailureReason;
     private TextView tareStatus;
+    private TextView plateCalibrationStatus;
     private TextView notificationStatus;
     private TextView notificationDetail;
     private ProgressBar connectionProgress;
     private Button connectionActionButton;
     private Button tareButton;
+    private Button plateCalibrationButton;
     private Button notificationActionButton;
+    private boolean plateCalibrationInProgress;
+    private int skippedCalibrationPlates;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,6 +57,8 @@ public class SettingsActivity extends Activity implements
         connectionActionButton = findViewById(R.id.connectionActionButton);
         tareStatus = findViewById(R.id.tareStatus);
         tareButton = findViewById(R.id.tareButton);
+        plateCalibrationStatus = findViewById(R.id.plateCalibrationStatus);
+        plateCalibrationButton = findViewById(R.id.plateCalibrationButton);
         notificationStatus = findViewById(R.id.notificationStatus);
         notificationDetail = findViewById(R.id.notificationDetail);
         notificationActionButton = findViewById(R.id.notificationActionButton);
@@ -58,6 +68,7 @@ public class SettingsActivity extends Activity implements
         findViewById(R.id.backButton).setOnClickListener(view -> finish());
         connectionActionButton.setOnClickListener(view -> handleConnectionAction());
         tareButton.setOnClickListener(view -> confirmTare());
+        plateCalibrationButton.setOnClickListener(view -> beginPlateCalibration());
         notificationActionButton.setOnClickListener(view -> handleNotificationAction());
     }
 
@@ -251,6 +262,7 @@ public class SettingsActivity extends Activity implements
         if (readiness != HardwareReadiness.READY) {
             renderHardwareSetupAction(readiness);
             renderTareState(false, R.string.tare_status_station_required);
+            renderPlateCalibrationState(false, R.string.plate_calibration_station_required);
             return;
         }
 
@@ -293,6 +305,13 @@ public class SettingsActivity extends Activity implements
             tareText = R.string.tare_status_firmware_required;
         }
         renderTareState(tareAvailable, tareText);
+        renderPlateCalibrationState(
+                state == MonitoringLifecycle.State.MONITORING
+                        && connectionManager.canRequestPlateCalibration(),
+                state == MonitoringLifecycle.State.MONITORING
+                        ? R.string.plate_calibration_ready
+                        : R.string.plate_calibration_station_required
+        );
     }
 
     private void renderHardwareSetupAction(HardwareReadiness readiness) {
@@ -322,6 +341,210 @@ public class SettingsActivity extends Activity implements
         tareButton.setEnabled(enabled);
         tareButton.setAlpha(enabled ? 1.0f : 0.45f);
         tareStatus.setText(statusText);
+    }
+
+    private void renderPlateCalibrationState(boolean enabled, int statusText) {
+        boolean actionEnabled = enabled && !plateCalibrationInProgress;
+        plateCalibrationButton.setEnabled(actionEnabled);
+        plateCalibrationButton.setAlpha(actionEnabled ? 1.0f : 0.45f);
+        if (!plateCalibrationInProgress) {
+            plateCalibrationStatus.setText(statusText);
+        }
+    }
+
+    private void beginPlateCalibration() {
+        EditText massInput = new EditText(this);
+        massInput.setHint(R.string.plate_calibration_reference_hint);
+        massInput.setInputType(
+                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL
+        );
+        massInput.setText(String.valueOf(DEFAULT_REFERENCE_MASS_GRAMS));
+        massInput.selectAll();
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.plate_calibration_reference_title)
+                .setMessage(R.string.plate_calibration_reference_message)
+                .setView(massInput)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.action_continue, null)
+                .create();
+
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(view -> {
+                    Double referenceMass = parseReferenceMass(massInput.getText().toString());
+                    if (referenceMass == null) {
+                        massInput.setError(getString(R.string.plate_calibration_invalid_mass));
+                        return;
+                    }
+
+                    dialog.dismiss();
+                    zeroScalesBeforeCalibration(referenceMass);
+                }));
+        dialog.show();
+    }
+
+    private Double parseReferenceMass(String text) {
+        try {
+            double mass = Double.parseDouble(text.trim().replace(',', '.'));
+            return mass >= 20.0 && mass <= 1000.0 ? mass : null;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private void zeroScalesBeforeCalibration(double referenceMass) {
+        plateCalibrationInProgress = true;
+        skippedCalibrationPlates = 0;
+        plateCalibrationButton.setEnabled(false);
+        plateCalibrationStatus.setText(R.string.plate_calibration_zeroing);
+
+        connectionManager.requestCalibrationTare(new WeightStationConnection.CommandCallback() {
+            @Override
+            public void onCommandSucceeded() {
+                runOnUiThread(() -> showPlateCalibrationStep(1, referenceMass));
+            }
+
+            @Override
+            public void onCommandFailed(WeightStationConnection.CommandFailure failure) {
+                runOnUiThread(() -> finishPlateCalibrationWithMessage(
+                        R.string.plate_calibration_zero_failed
+                ));
+            }
+        });
+    }
+
+    private void showPlateCalibrationStep(int plateNumber, double referenceMass) {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.plate_calibration_step_title, plateNumber))
+                .setMessage(getString(
+                        R.string.plate_calibration_step_message,
+                        referenceMass,
+                        plateNumber
+                ))
+                .setCancelable(false)
+                .setNegativeButton(
+                        R.string.action_stop,
+                        (dialog, which) -> finishPlateCalibration()
+                )
+                .setPositiveButton(
+                        R.string.plate_calibration_step_action,
+                        (dialog, which) -> requestPlateCalibration(
+                                plateNumber,
+                                referenceMass
+                        )
+                )
+                .show();
+    }
+
+    private void requestPlateCalibration(int plateNumber, double referenceMass) {
+        plateCalibrationStatus.setText(getString(
+                R.string.plate_calibration_running,
+                plateNumber
+        ));
+
+        connectionManager.requestPlateCalibration(
+                plateNumber,
+                referenceMass,
+                new WeightStationConnection.CommandCallback() {
+                    @Override
+                    public void onCommandSucceeded() {
+                        runOnUiThread(() -> continuePlateCalibration(
+                                plateNumber,
+                                referenceMass
+                        ));
+                    }
+
+                    @Override
+                    public void onCommandFailed(
+                            WeightStationConnection.CommandFailure failure
+                    ) {
+                        runOnUiThread(() -> showPlateCalibrationFailure(
+                                plateNumber,
+                                referenceMass,
+                                failure
+                        ));
+                    }
+                }
+        );
+    }
+
+    private void showPlateCalibrationFailure(
+            int plateNumber,
+            double referenceMass,
+            WeightStationConnection.CommandFailure failure
+    ) {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+
+        int message = failure == WeightStationConnection.CommandFailure.STATION_REJECTED
+                ? R.string.plate_calibration_failed
+                : R.string.plate_calibration_command_failed;
+        new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.plate_calibration_failed_title, plateNumber))
+                .setMessage(message)
+                .setCancelable(false)
+                .setNegativeButton(
+                        R.string.action_stop,
+                        (dialog, which) -> finishPlateCalibration()
+                )
+                .setNeutralButton(
+                        R.string.plate_calibration_skip,
+                        (dialog, which) -> {
+                            skippedCalibrationPlates++;
+                            continuePlateCalibration(plateNumber, referenceMass);
+                        }
+                )
+                .setPositiveButton(
+                        R.string.action_retry,
+                        (dialog, which) -> showPlateCalibrationStep(
+                                plateNumber,
+                                referenceMass
+                        )
+                )
+                .show();
+    }
+
+    private void continuePlateCalibration(int plateNumber, double referenceMass) {
+        if (plateNumber < PLATE_COUNT) {
+            showPlateCalibrationStep(plateNumber + 1, referenceMass);
+        } else {
+            showPlateCalibrationComplete();
+        }
+    }
+
+    private void showPlateCalibrationComplete() {
+        int message = skippedCalibrationPlates == 0
+                ? R.string.plate_calibration_complete
+                : R.string.plate_calibration_complete_with_skips;
+        plateCalibrationInProgress = false;
+        skippedCalibrationPlates = 0;
+        renderScreen();
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.plate_calibration_complete_title)
+                .setMessage(message)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+    }
+
+    private void finishPlateCalibrationWithMessage(int message) {
+        finishPlateCalibration();
+        if (!isFinishing() && !isDestroyed()) {
+            new AlertDialog.Builder(this)
+                    .setMessage(message)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+        }
+    }
+
+    private void finishPlateCalibration() {
+        plateCalibrationInProgress = false;
+        skippedCalibrationPlates = 0;
+        renderScreen();
     }
 
     private void confirmTare() {

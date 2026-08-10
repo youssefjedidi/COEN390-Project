@@ -1,9 +1,10 @@
 package com.coen390.smartexit;
 
+import java.util.Locale;
 import java.util.UUID;
 
 final class WeightStationConnection {
-    private static final long COMMAND_TIMEOUT_MS = 10_000;
+    private static final long COMMAND_TIMEOUT_MS = 15_000;
 
     static final String DEVICE_NAME = "SmartExit-Station";
     static final UUID SERVICE_UUID = UUID.fromString("05442887-a14c-4c36-906c-0fe1af039f9f");
@@ -37,7 +38,8 @@ final class WeightStationConnection {
         STATION_REJECTED,
         TIMED_OUT,
         DISCONNECTED,
-        IN_PROGRESS
+        IN_PROGRESS,
+        INVALID_REQUEST
     }
 
     enum ConnectionMode {
@@ -122,6 +124,8 @@ final class WeightStationConnection {
     private Failure failure;
     private boolean commandSupported;
     private volatile CommandCallback pendingCommand;
+    private String[] pendingSuccessResponses;
+    private String[] pendingFailureResponses;
     private String connectedStationAddress;
 
     WeightStationConnection(Transport transport, Listener listener) {
@@ -142,7 +146,11 @@ final class WeightStationConnection {
     }
 
     boolean canRequestTare() {
-        return state == State.CONNECTED && commandSupported && pendingCommand == null;
+        return canSendCommand();
+    }
+
+    boolean canRequestPlateCalibration() {
+        return canSendCommand();
     }
 
     void connect() {
@@ -185,6 +193,60 @@ final class WeightStationConnection {
     }
 
     void requestTare(CommandCallback callback) {
+        sendCommand(
+                "TARE",
+                new String[]{"TARE_OK"},
+                new String[]{"TARE_FAILED", "TARE_PARTIAL"},
+                callback
+        );
+    }
+
+    void requestCalibrationTare(CommandCallback callback) {
+        sendCommand(
+                "TARE",
+                new String[]{"TARE_OK", "TARE_PARTIAL"},
+                new String[]{"TARE_FAILED"},
+                callback
+        );
+    }
+
+    void requestPlateCalibration(
+            int plateNumber,
+            double referenceMassGrams,
+            CommandCallback callback
+    ) {
+        if (plateNumber < 1 || plateNumber > 4
+                || !Double.isFinite(referenceMassGrams)
+                || referenceMassGrams < 20.0
+                || referenceMassGrams > 1000.0) {
+            callback.onCommandFailed(CommandFailure.INVALID_REQUEST);
+            return;
+        }
+
+        String command = String.format(
+                Locale.CANADA,
+                "CALIBRATE,%d,%.1f",
+                plateNumber,
+                referenceMassGrams
+        );
+        sendCommand(
+                command,
+                new String[]{"CALIBRATION_OK," + plateNumber},
+                new String[]{"CALIBRATION_FAILED," + plateNumber},
+                callback
+        );
+    }
+
+    private boolean canSendCommand() {
+        return state == State.CONNECTED && commandSupported && pendingCommand == null;
+    }
+
+    private void sendCommand(
+            String command,
+            String[] successResponses,
+            String[] failureResponses,
+            CommandCallback callback
+    ) {
         if (state != State.CONNECTED) {
             callback.onCommandFailed(CommandFailure.NOT_CONNECTED);
             return;
@@ -199,7 +261,9 @@ final class WeightStationConnection {
         }
 
         pendingCommand = callback;
-        transport.writeCommand("TARE", new CommandEvents() {
+        pendingSuccessResponses = successResponses;
+        pendingFailureResponses = failureResponses;
+        transport.writeCommand(command, new CommandEvents() {
             @Override
             public void onCommandWritten() {
                 if (pendingCommand != null) {
@@ -304,14 +368,23 @@ final class WeightStationConnection {
         }
 
         String result = response.trim();
-        if ("TARE_OK".equals(result)) {
+        if (matchesResponse(result, pendingSuccessResponses)) {
             CommandCallback callback = takePendingCommand();
             if (callback != null) {
                 callback.onCommandSucceeded();
             }
-        } else if ("TARE_FAILED".equals(result)) {
+        } else if (matchesResponse(result, pendingFailureResponses)) {
             finishPendingCommand(CommandFailure.STATION_REJECTED);
         }
+    }
+
+    private boolean matchesResponse(String response, String[] expectedResponses) {
+        for (String expectedResponse : expectedResponses) {
+            if (response.equals(expectedResponse)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void finishPendingCommand(CommandFailure failure) {
@@ -325,6 +398,8 @@ final class WeightStationConnection {
         CommandCallback callback = pendingCommand;
         if (callback != null) {
             pendingCommand = null;
+            pendingSuccessResponses = null;
+            pendingFailureResponses = null;
             transport.cancelCommandTimeout();
         }
         return callback;

@@ -49,8 +49,11 @@ For example:
 ```
 
 `plate_number` is an integer from 1 to 4. Weight and status use the same rules
-as the single-plate payload. The Android parser accepts both formats so the
-single-plate prototype remains usable while the four-plate hardware is tested.
+as the single-plate payload. On the integrated station, a stable value within
+20 g of zero is `NO_LOAD`. A loaded plate is `UNSTABLE` when the middle five
+filtered samples span more than 5 g or 4% of their average, whichever is
+larger. The Android parser accepts both payload formats so the single-plate
+prototype remains usable while the four-plate hardware is tested.
 
 ## Station commands
 
@@ -71,8 +74,15 @@ stores one of these values on the command characteristic:
 | `TARE_QUEUED` | The request was accepted and is waiting to run. |
 | `TARE_RUNNING` | The station is sampling the empty plates. |
 | `TARE_OK` | All four plates were tared successfully. |
-| `TARE_FAILED` | At least one HX711 did not respond. |
+| `TARE_PARTIAL` | At least one plate was tared, but another HX711 did not respond. |
+| `TARE_FAILED` | None of the HX711 modules responded. |
+| `CALIBRATION_OK,n` | Plate `n` was calibrated and the new factor was applied. |
+| `CALIBRATION_FAILED,n` | Plate `n` rejected the calibration request. |
 | `UNKNOWN_COMMAND` | The written text was not supported. |
 
 The plates must be empty before `TARE` is sent. A tare changes the zero offset;
-it does not change any calibration factor.
+it does not change any calibration factor. Android starts plate calibration by
+accepting either `TARE_OK` or `TARE_PARTIAL`, then sends
+`CALIBRATE,plate_number,reference_grams` for each working plate. A normal
+**Zero all scales** request treats `TARE_PARTIAL` as a failure so the user is not
+told that every plate was zeroed.

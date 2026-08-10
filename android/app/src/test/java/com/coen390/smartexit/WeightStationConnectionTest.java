@@ -131,6 +131,36 @@ public class WeightStationConnectionTest {
     }
 
     @Test
+    public void normalTareReportsPartialStationResultAsFailure() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection(true);
+
+        CommandRecorder command = new CommandRecorder();
+        connection.requestTare(command);
+        transport.finishCommand();
+        transport.sendCommandResponse("TARE_PARTIAL");
+
+        assertFalse(command.succeeded);
+        assertEquals(WeightStationConnection.CommandFailure.STATION_REJECTED, command.failure);
+    }
+
+    @Test
+    public void calibrationCanContinueAfterAvailableScalesWereTared() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection(true);
+
+        CommandRecorder command = new CommandRecorder();
+        connection.requestCalibrationTare(command);
+        transport.finishCommand();
+        transport.sendCommandResponse("TARE_PARTIAL");
+
+        assertTrue(command.succeeded);
+        assertNull(command.failure);
+    }
+
+    @Test
     public void tareRequestTimesOutWhenStationDoesNotReply() {
         connection.connect();
         transport.findStation();
@@ -205,6 +235,71 @@ public class WeightStationConnectionTest {
 
         assertFalse(command.succeeded);
         assertEquals(WeightStationConnection.CommandFailure.WRITE_FAILED, command.failure);
+    }
+
+    @Test
+    public void plateCalibrationSendsMassAndWaitsForMatchingConfirmation() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection(true);
+
+        CommandRecorder command = new CommandRecorder();
+        connection.requestPlateCalibration(2, 453.6, command);
+        transport.finishCommand();
+
+        assertEquals("CALIBRATE,2,453.6", transport.lastCommand);
+        assertFalse(command.succeeded);
+
+        transport.sendCommandResponse("CALIBRATION_OK,2");
+
+        assertTrue(command.succeeded);
+        assertEquals(1, command.completionCount);
+    }
+
+    @Test
+    public void plateCalibrationFailureIsReportedToCaller() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection(true);
+
+        CommandRecorder command = new CommandRecorder();
+        connection.requestPlateCalibration(3, 453.6, command);
+        transport.finishCommand();
+        transport.sendCommandResponse("CALIBRATION_FAILED,3");
+
+        assertFalse(command.succeeded);
+        assertEquals(WeightStationConnection.CommandFailure.STATION_REJECTED, command.failure);
+    }
+
+    @Test
+    public void responseForAnotherPlateDoesNotCompleteCalibration() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection(true);
+
+        CommandRecorder command = new CommandRecorder();
+        connection.requestPlateCalibration(2, 453.6, command);
+        transport.finishCommand();
+        transport.sendCommandResponse("CALIBRATION_OK,1");
+
+        assertFalse(command.succeeded);
+        assertEquals(0, command.completionCount);
+
+        transport.sendCommandResponse("CALIBRATION_OK,2");
+        assertTrue(command.succeeded);
+    }
+
+    @Test
+    public void invalidPlateCalibrationIsRejectedBeforeBluetoothWrite() {
+        connection.connect();
+        transport.findStation();
+        transport.finishConnection(true);
+
+        CommandRecorder command = new CommandRecorder();
+        connection.requestPlateCalibration(5, 453.6, command);
+
+        assertNull(transport.lastCommand);
+        assertEquals(WeightStationConnection.CommandFailure.INVALID_REQUEST, command.failure);
     }
 
     @Test
