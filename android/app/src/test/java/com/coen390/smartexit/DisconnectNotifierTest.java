@@ -1,6 +1,7 @@
 package com.coen390.smartexit;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -9,6 +10,14 @@ import java.util.Arrays;
 import java.util.Collections;
 
 public class DisconnectNotifierTest {
+
+    @Test
+    public void reminderCannotReplaceTheForegroundServiceNotification() {
+        assertNotEquals(
+                StationMonitoringService.MONITORING_NOTIFICATION_ID,
+                DisconnectNotifier.FORGOTTEN_ITEMS_NOTIFICATION_ID
+        );
+    }
 
     @Test
     public void deniedPermissionPreventsNotificationDelivery() {

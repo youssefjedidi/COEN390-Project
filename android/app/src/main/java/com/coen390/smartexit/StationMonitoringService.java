@@ -18,7 +18,7 @@ public final class StationMonitoringService extends Service
     private static final String ACTION_STOP =
             "com.coen390.smartexit.action.STOP_MONITORING";
     private static final String CHANNEL_ID = "station_monitoring";
-    private static final int NOTIFICATION_ID = 2001;
+    static final int MONITORING_NOTIFICATION_ID = 2001;
 
     private StationConnectionManager connectionManager;
 
@@ -95,12 +95,12 @@ public final class StationMonitoringService extends Service
         Notification notification = buildNotification(messageResId);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
-                    NOTIFICATION_ID,
+                    MONITORING_NOTIFICATION_ID,
                     notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
             );
         } else {
-            startForeground(NOTIFICATION_ID, notification);
+            startForeground(MONITORING_NOTIFICATION_ID, notification);
         }
     }
 
@@ -111,7 +111,7 @@ public final class StationMonitoringService extends Service
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) {
             manager.notify(
-                    NOTIFICATION_ID,
+                    MONITORING_NOTIFICATION_ID,
                     buildNotification(notificationTextFor(state, pauseReason))
             );
         }
