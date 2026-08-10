@@ -47,9 +47,14 @@ final class StationReadingProcessor {
             long timestampMillis
     ) {
         if (!reading.hasPlateNumber()
-                || reading.getStatus() == BluetoothReading.Status.ERROR
                 || reading.getStatus() == BluetoothReading.Status.UNSTABLE) {
             return Optional.empty();
+        }
+
+        if (reading.getStatus() == BluetoothReading.Status.ERROR) {
+            return dashboardCoordinator
+                    .processUnavailablePlate(reading.getPlateNumber())
+                    .map(states -> DisconnectSnapshot.from(timestampMillis, states));
         }
 
         double grams = reading.getStatus() == BluetoothReading.Status.NO_LOAD

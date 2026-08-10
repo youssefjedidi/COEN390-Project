@@ -43,6 +43,10 @@ For example, `3,146.2,OK` reports a stable 146.2 g reading on Plate 3.
 Before the first weight test, leave every plate empty while the ESP32 starts.
 Send `t` in Serial Monitor or use the app's tare control to zero all four
 plates. Taring changes the zero offset but keeps the four calibration factors
-defined in the sketch.
+saved by the sketch. To calibrate a plate with a known mass, use a command such
+as `c1 453.6` for a one-pound reference on Plate 1, or use **Calibrate plate
+readings** in the Android Settings screen. Repeat for each plate using the same
+reference. Full instructions are in
+`four_plate_ble_service/DEMO_TEST.md`.
 
 The sketches were compiled using Arduino's `ESP32 Dev Module` board profile, ESP32 Arduino core `2.0.17`, and `HX711 Arduino Library` version `0.7.5`. The BLE and Preferences libraries are included with the ESP32 Arduino package.

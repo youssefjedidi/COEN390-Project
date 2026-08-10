@@ -62,7 +62,23 @@ final class DashboardStateCoordinator {
             return Optional.empty();
         }
 
-        RecognitionResult result = recognize(stableReading.get());
+        return recordPlateResult(recognize(stableReading.get()));
+    }
+
+    Optional<List<TrackedItemState>> processUnavailablePlate(int plateNumber) {
+        if (plateNumber < 1 || plateNumber > plateCount) {
+            throw new IllegalArgumentException(
+                    "plateNumber must be between 1 and " + plateCount
+            );
+        }
+        return recordPlateResult(
+                RecognitionResult.unavailable(new PlateReading(plateNumber, 0.0))
+        );
+    }
+
+    private Optional<List<TrackedItemState>> recordPlateResult(
+            RecognitionResult result
+    ) {
         int plateNumber = result.getReading().getPlateNumber();
 
         if (!platesUpdatedThisCycle[plateNumber]) {

@@ -4,5 +4,6 @@ public enum RecognitionStatus {
     MATCHED,
     AMBIGUOUS,
     UNKNOWN,
+    UNAVAILABLE,
     EMPTY
 }

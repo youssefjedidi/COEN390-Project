@@ -150,6 +150,30 @@ final class StationConnectionManager implements WeightStationConnection.Listener
         connection.requestTare(callback);
     }
 
+    void requestCalibrationTare(WeightStationConnection.CommandCallback callback) {
+        if (connection == null) {
+            callback.onCommandFailed(WeightStationConnection.CommandFailure.NOT_CONNECTED);
+            return;
+        }
+        connection.requestCalibrationTare(callback);
+    }
+
+    boolean canRequestPlateCalibration() {
+        return connection != null && connection.canRequestPlateCalibration();
+    }
+
+    void requestPlateCalibration(
+            int plateNumber,
+            double referenceMassGrams,
+            WeightStationConnection.CommandCallback callback
+    ) {
+        if (connection == null) {
+            callback.onCommandFailed(WeightStationConnection.CommandFailure.NOT_CONNECTED);
+            return;
+        }
+        connection.requestPlateCalibration(plateNumber, referenceMassGrams, callback);
+    }
+
     /** Fully tears down the connection, e.g. when permissions/BLE support are lost. */
     void pauseMonitoring(MonitoringLifecycle.PauseReason reason) {
         if (monitoringLifecycle.getState() == MonitoringLifecycle.State.PAUSED

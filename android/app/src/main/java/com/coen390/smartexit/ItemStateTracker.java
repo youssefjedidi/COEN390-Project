@@ -64,6 +64,7 @@ final class ItemStateTracker {
         Integer matchedPlateNumber = null;
         boolean matchedOnMoreThanOnePlate = false;
         boolean appearsInAmbiguousResult = false;
+        boolean sensorUnavailable = false;
 
         for (RecognitionResult result : plateSnapshot) {
             if (result.getStatus() == RecognitionStatus.MATCHED
@@ -76,13 +77,15 @@ final class ItemStateTracker {
             } else if (result.getStatus() == RecognitionStatus.AMBIGUOUS
                     && containsItem(result.getCandidates(), item)) {
                 appearsInAmbiguousResult = true;
+            } else if (result.getStatus() == RecognitionStatus.UNAVAILABLE) {
+                sensorUnavailable = true;
             }
         }
 
         if (matchedPlateNumber != null && !matchedOnMoreThanOnePlate) {
             return TrackedItemState.present(item, matchedPlateNumber);
         }
-        if (matchedOnMoreThanOnePlate || appearsInAmbiguousResult) {
+        if (matchedOnMoreThanOnePlate || appearsInAmbiguousResult || sensorUnavailable) {
             return TrackedItemState.unknown(item);
         }
         return TrackedItemState.missing(item);

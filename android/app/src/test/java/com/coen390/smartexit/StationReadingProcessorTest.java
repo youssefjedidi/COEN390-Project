@@ -55,6 +55,21 @@ public class StationReadingProcessorTest {
     }
 
     @Test
+    public void sensorErrorCompletesTheCycleWithoutClaimingItemsAreMissing() {
+        assertFalse(processor.process(reading(1, 100.0f), 1000L).isPresent());
+        assertFalse(processor.process(noLoad(2), 1001L).isPresent());
+        assertFalse(processor.process(
+                BluetoothReading.forPlate(3, 0.0f, BluetoothReading.Status.ERROR),
+                1002L
+        ).isPresent());
+
+        DisconnectSnapshot update = processor.process(noLoad(4), 1003L).get();
+
+        assertEquals(TrackedItemStatus.PRESENT, item(update, "keys").getStatus());
+        assertEquals(TrackedItemStatus.UNKNOWN, item(update, "wallet").getStatus());
+    }
+
+    @Test
     public void replacingProfilesStartsACompleteFreshCycle() {
         processor.process(reading(1, 100.0f), 1000L);
         processor.replaceProfiles(Arrays.asList(wallet));
